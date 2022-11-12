@@ -1,0 +1,16 @@
+services:
+  foxglove-amd64:
+    image: cr.yandex/crp8hpfj5tuhlaodm4dl/foxglove:0.1-amd64
+    build:
+      context: .
+      args: { ARCH: linux/amd64 }
+    ports:
+      - ${FOXGLOVE_PORT:-8080}:8080
+
+  foxglove-arm64:
+    image: cr.yandex/crp8hpfj5tuhlaodm4dl/foxglove:0.1-arm64
+    build:
+      context: .
+      args: { ARCH: linux/arm64/v8 }
+    ports:
+      - ${FOXGLOVE_PORT:-8080}:8080

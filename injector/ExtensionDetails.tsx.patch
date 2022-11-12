@@ -1,0 +1,15 @@
+diff --git a/ExtensionDetails.tsx.orig b/ExtensionDetails.tsx.patched
+index ca25d78..21030c6 100644
+--- a/ExtensionDetails.tsx.orig
++++ b/ExtensionDetails.tsx.patched
+@@ -52,6 +52,10 @@ export function ExtensionDetails({ extension, onClose, installed }: Props): Reac
+   const canInstall = extension.foxe != undefined;
+   const canUninstall = extension.namespace !== "org";
+ 
++  (window as any).__injector_downloadExtension = downloadExtension;
++  (window as any).__injector_installExtension = installExtension;
++  (window as any).__injector_callback();
++
+   const { value: readmeContent } = useAsync(
+     async () => (readmeUrl != undefined ? await marketplace.getMarkdown(readmeUrl) : ""),
+     [marketplace, readmeUrl],
