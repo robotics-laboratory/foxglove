@@ -1,0 +1,68 @@
+diff --git a/packages/studio-base/src/components/ExtensionDetails.tsx b/packages/studio-base/src/components/ExtensionDetails.tsx
+index ca25d78b..5899bb64 100644
+--- a/packages/studio-base/src/components/ExtensionDetails.tsx
++++ b/packages/studio-base/src/components/ExtensionDetails.tsx
+@@ -52,6 +52,11 @@ export function ExtensionDetails({ extension, onClose, installed }: Props): Reac
+   const canInstall = extension.foxe != undefined;
+   const canUninstall = extension.namespace !== "org";
+ 
++  // Expose useful methods to global scope (very dirty, should refactor later)
++  (window as any).__injector_downloadExtension = downloadExtension;
++  (window as any).__injector_installExtension = installExtension;
++  (window as any).__injector_callback();
++
+   const { value: readmeContent } = useAsync(
+     async () => (readmeUrl != undefined ? await marketplace.getMarkdown(readmeUrl) : ""),
+     [marketplace, readmeUrl],
+diff --git a/packages/studio-base/src/panels/ThreeDeeRender/Input.ts b/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
+index fb37b28e..b536b973 100644
+--- a/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
++++ b/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
+@@ -132,16 +132,29 @@ export class Input extends EventEmitter<InputEvents> {
+     this.emit("click", this.cursorCoords, this.worldSpaceCursorCoords, event);
+   };
+ 
++  private convertEvent = (event: TouchEvent): MouseEvent | null => {
++    // Helper function to convert TouchEvent to fake MouseEvent
++    let touch = event.touches[0];
++    if (!touch || !event.target) return null;
++    let rect = (event.target as Element).getBoundingClientRect();
++    // Other code only uses .offsetX/Y, so other attributes are not necessary
++    let ev = { offsetX: touch.pageX - rect.left, offsetY: touch.pageY - rect.top };
++    return ev as MouseEvent;
++  }
++
+   private onTouchStart = (event: TouchEvent): void => {
+-    const touch = event.touches[0];
+-    if (touch) {
+-      this.startClientPos = new THREE.Vector2(touch.clientX, touch.clientY);
+-    }
+     event.preventDefault();
++    let ev = this.convertEvent(event);
++    if (!ev) return;
++    this.startClientPos = new THREE.Vector2(ev.offsetX, ev.offsetY);
++    this.updateCursorCoords(ev);
+   };
+ 
+   private onTouchEnd = (event: TouchEvent): void => {
+     event.preventDefault();
++    // "touchend" doesn't have any touches, so we can't create a proper event
++    let ev = {} as MouseEvent;
++    this.emit("click", this.cursorCoords, this.worldSpaceCursorCoords, ev);
+   };
+ 
+   private onTouchMove = (event: TouchEvent): void => {
+diff --git a/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts b/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
+index 9f29a94a..36f7c72b 100644
+--- a/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
++++ b/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
+@@ -178,7 +178,8 @@ export class PublishClickTool extends SceneExtension<Renderable<BaseUserData>, P
+             publishClickType: this.publishClickType,
+             point: { x: this.point1.x, y: this.point1.y, z: this.point1.z },
+           });
+-          this._setState("idle");
++          // Prevent "publish point" from deactivating
++          // this._setState("idle");
+         } else {
+           this._setState("place-second-point");
+         }

@@ -10,21 +10,23 @@ RUN apt update && apt install --no-install-recommends -y git-lfs
 RUN git clone -b $FOXGLOVE_VERSION --depth 1 $FOXGLOVE_REPO_URL /src
 RUN corepack enable && yarn install --immutable
 ENV FOXGLOVE_DISABLE_SIGN_IN=true
-COPY injector/ExtensionDetails.tsx.patch .
-RUN patch -p1 packages/studio-base/src/components/ExtensionDetails.tsx ExtensionDetails.tsx.patch 
+COPY injector/foxglove.patch .
+RUN git apply foxglove.patch
 RUN yarn run web:build:prod
 
 FROM --platform=linux/amd64 node:16 as stream-panel-build
 WORKDIR /src
+COPY live-stream-panel/package.json live-stream-panel/package-lock.json ./
+RUN npm install
 COPY live-stream-panel ./
-RUN npm install && npm run package
+RUN npm run package
 
 FROM --platform=$ARCH caddy:2.5.2-alpine
 WORKDIR /src
 
 COPY --from=foxglove-base /src/web/.webpack ./
-COPY injector/bootstrap.sh injector/loader.js ./
-RUN sed -i 's/<\/body>/<script src="loader.js"><\/script><\/body>/g' index.html
+COPY injector/bootstrap.sh injector/inject.js ./
+RUN sed -i 's/<\/body>/<script src="inject.js" type="module"><\/script><\/body>/g' index.html
 COPY --from=stream-panel-build /src/*.foxe ./
 
 EXPOSE 8080
