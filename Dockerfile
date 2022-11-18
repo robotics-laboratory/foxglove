@@ -10,7 +10,7 @@ RUN apt update && apt install --no-install-recommends -y git-lfs
 RUN git clone -b $FOXGLOVE_VERSION --depth 1 $FOXGLOVE_REPO_URL /src
 RUN corepack enable && yarn install --immutable
 ENV FOXGLOVE_DISABLE_SIGN_IN=true
-COPY injector/foxglove.patch .
+COPY foxglove-web/foxglove.patch .
 RUN git apply foxglove.patch
 RUN yarn run web:build:prod
 
@@ -25,7 +25,7 @@ FROM --platform=$ARCH caddy:2.5.2-alpine
 WORKDIR /src
 
 COPY --from=foxglove-base /src/web/.webpack ./
-COPY injector/bootstrap.sh injector/inject.js ./
+COPY foxglove-web/bootstrap.sh foxglove-web/inject.js ./
 RUN sed -i 's/<\/body>/<script src="inject.js" type="module"><\/script><\/body>/g' index.html
 COPY --from=stream-panel-build /src/*.foxe ./
 

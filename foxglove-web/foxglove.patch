@@ -1,0 +1,117 @@
+diff --git a/packages/studio-base/src/components/ExtensionsSidebar/index.tsx b/packages/studio-base/src/components/ExtensionsSidebar/index.tsx
+index 84561dd1..367ad43a 100644
+--- a/packages/studio-base/src/components/ExtensionsSidebar/index.tsx
++++ b/packages/studio-base/src/components/ExtensionsSidebar/index.tsx
+@@ -10,7 +10,10 @@ import {
+   ListItemText,
+   Typography,
+   styled as muiStyled,
++  IconButton,
+ } from "@mui/material";
++import CloudDownloadOutlinedIcon from '@mui/icons-material/CloudDownloadOutlined';
++import { useSnackbar } from "notistack";
+ import { differenceWith, groupBy, isEmpty, keyBy } from "lodash";
+ import { useEffect, useMemo, useState } from "react";
+ import { useAsyncFn } from "react-use";
+@@ -93,6 +96,9 @@ export default function ExtensionsSidebar(): React.ReactElement {
+     | undefined
+   >(undefined);
+   const installed = useExtensionCatalog((state) => state.installedExtensions);
++  const downloadExtension = useExtensionCatalog((state) => state.downloadExtension);
++  const installExtension = useExtensionCatalog((state) => state.installExtension);
++  const { enqueueSnackbar } = useSnackbar();
+   const marketplace = useExtensionMarketplace();
+ 
+   const [marketplaceEntries, refreshMarketplaceEntries] = useAsyncFn(
+@@ -177,8 +183,38 @@ export default function ExtensionsSidebar(): React.ReactElement {
+     );
+   }
+ 
++  const reloadServerExtensions = async () => {
++    let res = await fetch("/extensions.list");
++    if (!res.ok) return log.error("Failed to fetch /extensions.list");
++    for (let name of (await res.text()).split("\n")) {
++      if (!name) continue;
++      console.log("[injector] Loading extension:", name);
++      try {
++        let data = await downloadExtension(`/${name}`);
++        let extension = await installExtension("local", data);
++        enqueueSnackbar(`Installed extension ${extension.id}`, { variant: "success" });
++      } catch (e) {
++        enqueueSnackbar(`Failed to install ${name}: ${e.message}`, {variant: "error"});
++      }
++    }
++  };
++
+   return (
+-    <SidebarContent title="Extensions" helpContent={helpContent} disablePadding>
++    <SidebarContent
++      title="Extensions"
++      helpContent={helpContent}
++      disablePadding
++      trailingItems={[
++        <IconButton
++          color="primary"
++          onClick={reloadServerExtensions}
++          aria-label="Reload extensions from server"
++          title="Reload extensions from server"
++        >
++          <CloudDownloadOutlinedIcon />
++        </IconButton>,
++      ]}
++    >
+       <Stack gap={1}>
+         {!isEmpty(namespacedEntries) ? (
+           Object.entries(namespacedEntries).map(([namespace, entries]) => (
+diff --git a/packages/studio-base/src/panels/ThreeDeeRender/Input.ts b/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
+index fb37b28e..b536b973 100644
+--- a/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
++++ b/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
+@@ -132,16 +132,29 @@ export class Input extends EventEmitter<InputEvents> {
+     this.emit("click", this.cursorCoords, this.worldSpaceCursorCoords, event);
+   };
+ 
++  private convertEvent = (event: TouchEvent): MouseEvent | null => {
++    // Helper function to convert TouchEvent to fake MouseEvent
++    let touch = event.touches[0];
++    if (!touch || !event.target) return null;
++    let rect = (event.target as Element).getBoundingClientRect();
++    // Other code only uses .offsetX/Y, so other attributes are not necessary
++    let ev = { offsetX: touch.pageX - rect.left, offsetY: touch.pageY - rect.top };
++    return ev as MouseEvent;
++  }
++
+   private onTouchStart = (event: TouchEvent): void => {
+-    const touch = event.touches[0];
+-    if (touch) {
+-      this.startClientPos = new THREE.Vector2(touch.clientX, touch.clientY);
+-    }
+     event.preventDefault();
++    let ev = this.convertEvent(event);
++    if (!ev) return;
++    this.startClientPos = new THREE.Vector2(ev.offsetX, ev.offsetY);
++    this.updateCursorCoords(ev);
+   };
+ 
+   private onTouchEnd = (event: TouchEvent): void => {
+     event.preventDefault();
++    // "touchend" doesn't have any touches, so we can't create a proper event
++    let ev = {} as MouseEvent;
++    this.emit("click", this.cursorCoords, this.worldSpaceCursorCoords, ev);
+   };
+ 
+   private onTouchMove = (event: TouchEvent): void => {
+diff --git a/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts b/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
+index 9f29a94a..a1e33890 100644
+--- a/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
++++ b/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
+@@ -178,7 +178,8 @@ export class PublishClickTool extends SceneExtension<Renderable<BaseUserData>, P
+             publishClickType: this.publishClickType,
+             point: { x: this.point1.x, y: this.point1.y, z: this.point1.z },
+           });
+-          this._setState("idle");
++          // Prevent "publish point" from deactivating after click
++          // this._setState("idle");
+         } else {
+           this._setState("place-second-point");
+         }

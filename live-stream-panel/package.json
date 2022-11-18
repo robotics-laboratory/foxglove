@@ -2,7 +2,7 @@
   "name": "live-stream-panel",
   "displayName": "Live Stream Panel",
   "description": "Displays live H.264 video stream via websockets",
-  "publisher": "The Lab",
+  "publisher": "lab",
   "homepage": "https://github.com/robotics-laboratory/foxglove",
   "version": "0.1",
   "license": "UNLICENSED",
