@@ -1,7 +1,7 @@
 import { ExtensionContext } from "@foxglove/studio";
-import { initStreamPanel } from "./StreamPanel";
+import { initButtonPanel } from "./ButtonPanel";
 import "./style.css";
 
 export function activate(extensionContext: ExtensionContext): void {
-  extensionContext.registerPanel({ name: "Live Stream", initPanel: initStreamPanel });
+  extensionContext.registerPanel({ name: "Service Button", initPanel: initButtonPanel });
 }

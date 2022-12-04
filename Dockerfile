@@ -28,6 +28,13 @@ RUN npm install
 COPY cartpole-panel ./
 RUN npm run package
 
+FROM --platform=linux/amd64 node:16 as service-button-panel
+WORKDIR /src
+COPY service-button-panel/package.json service-button-panel/package-lock.json ./
+RUN npm install
+COPY service-button-panel ./
+RUN npm run package
+
 FROM --platform=$ARCH caddy:2.5.2-alpine
 WORKDIR /src
 
@@ -36,6 +43,7 @@ COPY foxglove-web/bootstrap.sh foxglove-web/inject.js ./
 RUN sed -i 's/<\/body>/<script src="inject.js" type="module"><\/script><\/body>/g' index.html
 COPY --from=live-stream-panel /src/*.foxe ./
 COPY --from=cartpole-panel /src/*.foxe ./
+COPY --from=service-button-panel /src/*.foxe ./
 
 EXPOSE 8080
 ENTRYPOINT ["/bin/sh", "-lca"]
