@@ -14,11 +14,18 @@ COPY foxglove-web/foxglove.patch .
 RUN git apply foxglove.patch
 RUN yarn run web:build:prod
 
-FROM --platform=linux/amd64 node:16 as stream-panel-build
+FROM --platform=linux/amd64 node:16 as live-stream-panel
 WORKDIR /src
 COPY live-stream-panel/package.json live-stream-panel/package-lock.json ./
 RUN npm install
 COPY live-stream-panel ./
+RUN npm run package
+
+FROM --platform=linux/amd64 node:16 as cartpole-panel
+WORKDIR /src
+COPY cartpole-panel/package.json cartpole-panel/package-lock.json ./
+RUN npm install
+COPY cartpole-panel ./
 RUN npm run package
 
 FROM --platform=$ARCH caddy:2.5.2-alpine
@@ -27,7 +34,8 @@ WORKDIR /src
 COPY --from=foxglove-base /src/web/.webpack ./
 COPY foxglove-web/bootstrap.sh foxglove-web/inject.js ./
 RUN sed -i 's/<\/body>/<script src="inject.js" type="module"><\/script><\/body>/g' index.html
-COPY --from=stream-panel-build /src/*.foxe ./
+COPY --from=live-stream-panel /src/*.foxe ./
+COPY --from=cartpole-panel /src/*.foxe ./
 
 EXPOSE 8080
 ENTRYPOINT ["/bin/sh", "-lca"]
