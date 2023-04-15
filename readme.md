@@ -4,7 +4,7 @@
 
 This repository contains various plugins and utilities for the [foxglove studio](https://foxglove.dev/) visualization platform:
 
-- **Foxglove Web** &mdash; web version of foxglove with some [QOL patches](https://github.com/foxglove/studio/discussions/4823) (unfortunately foxglove owners don't seem to be interested in implementing them)
+- **Foxglove Web** &mdash; web version of foxglove with some [QOL patches](https://github.com/foxglove/studio/issues/4822) (unfortunately foxglove owners don't seem to be interested in implementing them)
 - **CartPole Panel** &mdash; visualization for the [cart-pole](https://github.com/robotics-laboratory/cart-pole) project
 - **Live Stream Panel** &mdash; real-time video streaming for the [truck](https://github.com/robotics-laboratory/truck) project
 - **Serivce Button Panel** &mdash; simple button widget that calls specified ROS service
