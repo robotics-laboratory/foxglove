@@ -3,47 +3,30 @@ ARG ARCH="linux/amd64"
 
 FROM --platform=linux/amd64 node:16 as foxglove-base
 ARG FOXGLOVE_REPO_URL="https://github.com/foxglove/studio"
-ARG FOXGLOVE_VERSION="v1.31.0"
+ARG FOXGLOVE_VERSION="v1.50.0"
 WORKDIR /src
 
 RUN apt update && apt install --no-install-recommends -y git-lfs
 RUN git clone -b $FOXGLOVE_VERSION --depth 1 $FOXGLOVE_REPO_URL /src
 RUN corepack enable && yarn install --immutable
+RUN yarn add -D file-system-access
 ENV FOXGLOVE_DISABLE_SIGN_IN=true
-COPY foxglove-web/foxglove.patch .
+COPY foxglove.patch .
 RUN git apply foxglove.patch
 RUN yarn run web:build:prod
 
-FROM --platform=linux/amd64 node:16 as live-stream-panel
+FROM --platform=linux/amd64 node:16 as extensions
 WORKDIR /src
-COPY live-stream-panel/package.json live-stream-panel/package-lock.json ./
+COPY extensions/package.json extensions/package-lock.json ./
 RUN npm install
-COPY live-stream-panel ./
-RUN npm run package
-
-FROM --platform=linux/amd64 node:16 as cartpole-panel
-WORKDIR /src
-COPY cartpole-panel/package.json cartpole-panel/package-lock.json ./
-RUN npm install
-COPY cartpole-panel ./
-RUN npm run package
-
-FROM --platform=linux/amd64 node:16 as service-button-panel
-WORKDIR /src
-COPY service-button-panel/package.json service-button-panel/package-lock.json ./
-RUN npm install
-COPY service-button-panel ./
+COPY extensions ./
 RUN npm run package
 
 FROM --platform=$ARCH caddy:2.5.2-alpine
 WORKDIR /src
-
 COPY --from=foxglove-base /src/web/.webpack ./
-COPY foxglove-web/bootstrap.sh foxglove-web/inject.js ./
-RUN sed -i 's/<\/body>/<script src="inject.js" type="module"><\/script><\/body>/g' index.html
-COPY --from=live-stream-panel /src/*.foxe ./
-COPY --from=cartpole-panel /src/*.foxe ./
-COPY --from=service-button-panel /src/*.foxe ./
+COPY --from=extensions /src/*.foxe ./
+COPY bootstrap.sh ./
 
 EXPOSE 8080
 ENTRYPOINT ["/bin/sh", "-lca"]

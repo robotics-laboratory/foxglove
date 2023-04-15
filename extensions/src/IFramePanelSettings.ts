@@ -10,21 +10,13 @@ import produce from "immer";
 
 export type Config = {
   url: string;
+  enabled: boolean;
 };
 
 export const defaultConfig: Config = {
-  url: `ws://${location.hostname}:5555`,
+  url: `http://example.com/`,
+  enabled: true,
 };
-
-export function validateWebsocketURL(value: string): string | undefined {
-  try {
-    let url = new URL(value);
-    if (url.protocol === "ws:" || url.protocol === "wss:") return undefined;
-    return "Must be a websocket URL (ws: or wss:)";
-  } catch (_) {
-    return "Invalid URL";
-  }
-}
 
 export function useSettingsTree(config: Config): SettingsTreeNodes {
   const generalSettings = useMemo(
@@ -35,8 +27,12 @@ export function useSettingsTree(config: Config): SettingsTreeNodes {
           input: "string",
           value: config.url,
           placeholder: "Stream websocket URL",
-          error: validateWebsocketURL(config.url),
         },
+        enabled: {
+          label: "Enabled",
+          input: "boolean",
+          value: config.enabled,
+        }
       },
     }),
     [config],
