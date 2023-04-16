@@ -1,5 +1,5 @@
 import { PanelExtensionContext } from "@foxglove/studio";
-import { useConfig, validateJSON } from "./settings";
+import { useConfig, validateJSON } from "./ButtonPanelSettings";
 import ReactDOM from "react-dom";
 
 
@@ -32,7 +32,7 @@ function ButtonPanel({ context }: { context: PanelExtensionContext }): JSX.Eleme
 
   return (
     <div className="service-button-panel">
-      <div className="button" onClick={callback}>{config.label}</div>
+      <div className="foxglove-button" onClick={callback}>{config.label}</div>
     </div>
   );
 }

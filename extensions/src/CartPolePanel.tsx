@@ -28,13 +28,13 @@ function CartPolePanel({ context }: { context: PanelExtensionContext }): JSX.Ele
     const container = useRef<HTMLDivElement | null>(null);
     const context2d = useRef<CanvasRenderingContext2D | null>(null);
     const stateHistory = useRef<CartPoleState[]>([]);
-    
+
     const { width, height } = useResizeDetector({
         refreshRate: 0,
         refreshMode: "debounce",
         targetRef: container,
     });
-    
+
     useLayoutEffect(() => {
         context.onRender = (renderState: RenderState, done) => {
             if (!context2d.current || !width || !height) return done();
@@ -62,13 +62,13 @@ function CartPolePanel({ context }: { context: PanelExtensionContext }): JSX.Ele
             ctx.moveTo(midX + cartRange / 2, midY - railBorderSize / 2);
             ctx.lineTo(midX + cartRange / 2, midY + railBorderSize / 2);
             ctx.stroke();
-            
+
             const state = getCurrentState(renderState);
             if (!state) return done();
             const history = stateHistory.current;
             history.unshift(state);
             if (history.length > historySize) history.length = historySize;
-            
+
             const getPoleEndPoint = (state: CartPoleState): [number, number] => {
                 const cartCenter = midX + state.pos * (cartRange - cartSize) / 2;
                 const x = cartCenter + Math.cos(state.angle - Math.PI / 2) * poleLength;
@@ -103,7 +103,7 @@ function CartPolePanel({ context }: { context: PanelExtensionContext }): JSX.Ele
             ctx.fill();
 
             if (history.length < 2) return done();
-            
+
             // Draw trajectory
             let prevPoint = getPoleEndPoint(history[0] as CartPoleState);
             history.slice(1).forEach((state, i) => {
@@ -133,6 +133,7 @@ function CartPolePanel({ context }: { context: PanelExtensionContext }): JSX.Ele
     </div>;
 }
 
-export function initCartPolePanel(context: PanelExtensionContext): void {
+export function initCartPolePanel(context: PanelExtensionContext): () => void {
     ReactDOM.render(<CartPolePanel context={context} />, context.panelElement);
+    return () => { ReactDOM.unmountComponentAtNode(context.panelElement) };
 }

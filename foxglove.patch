@@ -1,0 +1,278 @@
+diff --git a/packages/studio-base/src/Workspace.tsx b/packages/studio-base/src/Workspace.tsx
+index 5905435..f3b7c9c 100644
+--- a/packages/studio-base/src/Workspace.tsx
++++ b/packages/studio-base/src/Workspace.tsx
+@@ -10,7 +10,8 @@
+ //   found at http://www.apache.org/licenses/LICENSE-2.0
+ //   You may not use this file except in compliance with the License.
+ 
+-import { Link, Typography } from "@mui/material";
++import { Link, Typography, IconButton } from "@mui/material";
++import CloudDownloadOutlinedIcon from '@mui/icons-material/CloudDownloadOutlined';
+ import { useSnackbar } from "notistack";
+ import { extname } from "path";
+ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+@@ -141,14 +142,6 @@ function AddPanel() {
+   );
+ }
+ 
+-function ExtensionsSidebar() {
+-  return (
+-    <SidebarContent title="Extensions" disablePadding>
+-      <ExtensionsSettings />
+-    </SidebarContent>
+-  );
+-}
+-
+ type WorkspaceProps = CustomWindowControlsProps & {
+   deepLinks?: string[];
+   appBarLeftInset?: number;
+@@ -360,6 +353,46 @@ function WorkspaceContent(props: WorkspaceProps): JSX.Element {
+   const { enqueueSnackbar } = useSnackbar();
+ 
+   const installExtension = useExtensionCatalog((state) => state.installExtension);
++  const downloadExtension = useExtensionCatalog((state) => state.downloadExtension);
++
++  const reloadServerExtensions = async () => {
++    let res = await fetch("/extensions.list");
++    if (!res.ok) return log.error("Failed to fetch server extensions");
++    for (let name of (await res.text()).split("\n")) {
++      if (!name) continue;
++      console.log("[injector] Loading extension:", name);
++      try {
++        let data = await downloadExtension(`/${name}`);
++        let extension = await installExtension("local", data);
++        enqueueSnackbar(`Installed extension ${extension.id}`, { variant: "success" });
++      } catch (e) {
++        enqueueSnackbar(`Failed to install ${name}: ${e.message}`, {variant: "error"});
++      }
++    }
++  };
++
++  const ExtensionsSidebar = useMemo(() => {
++    return function() {
++      return (
++        <SidebarContent
++          title="Extensions"
++          disablePadding
++          trailingItems={[
++            <IconButton
++            color="primary"
++            onClick={reloadServerExtensions}
++            aria-label="Reload extensions from server"
++            title="Reload extensions from server"
++            >
++              <CloudDownloadOutlinedIcon />
++            </IconButton>,
++          ]}
++        >
++          <ExtensionsSettings />
++        </SidebarContent>
++      );
++    }
++  }, []);
+ 
+   const openHandle = useCallback(
+     async (
+diff --git a/packages/studio-base/src/components/LayoutBrowser/index.tsx b/packages/studio-base/src/components/LayoutBrowser/index.tsx
+index f426dae..3986b48 100644
+--- a/packages/studio-base/src/components/LayoutBrowser/index.tsx
++++ b/packages/studio-base/src/components/LayoutBrowser/index.tsx
+@@ -5,6 +5,7 @@
+ import AddIcon from "@mui/icons-material/Add";
+ import CloudOffIcon from "@mui/icons-material/CloudOff";
+ import FileOpenOutlinedIcon from "@mui/icons-material/FileOpenOutlined";
++import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
+ import {
+   Button,
+   IconButton,
+@@ -461,6 +462,43 @@ export default function LayoutBrowser({
+     [analytics, layoutManager, onSelectLayout],
+   );
+ 
++  const tryInstallLayout = async (layoutName: string, content: string) => {
++    if (!isMounted()) {
++      return;
++    }
++
++    let parsedState: unknown;
++    try {
++      parsedState = JSON.parse(content);
++    } catch (err) {
++      enqueueSnackbar(`${layoutName} is not a valid layout: ${err.message}`, {
++        variant: "error",
++      });
++      return;
++    }
++
++    if (typeof parsedState !== "object" || !parsedState) {
++      enqueueSnackbar(`${layoutName} is not a valid layout`, { variant: "error" });
++      return;
++    }
++
++    const data = parsedState as LayoutData;
++    const oldLayout = (await layoutManager.getLayouts()).find(
++      (layout) => layout.name === layoutName
++    );
++    if (oldLayout) {
++      await layoutManager.updateLayout({id: oldLayout.id, data});
++      return oldLayout;
++    } else {
++      const newLayout = await layoutManager.saveNewLayout({
++        name: layoutName,
++        data,
++        permission: "CREATOR_WRITE",
++      });
++      return newLayout;
++    }
++  };
++
+   const importLayout = useCallbackWithToast(async () => {
+     if (!(await promptForUnsavedChanges())) {
+       return;
+@@ -486,33 +524,7 @@ export default function LayoutBrowser({
+         const file = await fileHandle.getFile();
+         const layoutName = path.basename(file.name, path.extname(file.name));
+         const content = await file.text();
+-
+-        if (!isMounted()) {
+-          return;
+-        }
+-
+-        let parsedState: unknown;
+-        try {
+-          parsedState = JSON.parse(content);
+-        } catch (err) {
+-          enqueueSnackbar(`${file.name} is not a valid layout: ${err.message}`, {
+-            variant: "error",
+-          });
+-          return;
+-        }
+-
+-        if (typeof parsedState !== "object" || !parsedState) {
+-          enqueueSnackbar(`${file.name} is not a valid layout`, { variant: "error" });
+-          return;
+-        }
+-
+-        const data = parsedState as LayoutData;
+-        const newLayout = await layoutManager.saveNewLayout({
+-          name: layoutName,
+-          data,
+-          permission: "CREATOR_WRITE",
+-        });
+-        return newLayout;
++        return await tryInstallLayout(layoutName, content);
+       }),
+     );
+ 
+@@ -533,6 +545,19 @@ export default function LayoutBrowser({
+     promptForUnsavedChanges,
+   ]);
+ 
++  const importServerLayouts = async () => {
++    let res = await fetch("/layouts.list");
++    if (!res.ok) return log.error("Failed to fetch server layouts");
++    for (let name of (await res.text()).split("\n")) {
++      if (!name) continue;
++      let layoutName = "[Server] " + path.basename(name, path.extname(name));
++      let res = await fetch(`/${name}`);
++      if (!res.ok) continue;
++      console.log("[injector] Loading layout:", layoutName);
++      await tryInstallLayout(layoutName, await res.text());
++    }
++  };
++
+   const layoutDebug = useContext(LayoutStorageDebuggingContext);
+ 
+   const [enableNewTopNav = false] = useAppConfigurationValue<boolean>(AppSetting.ENABLE_NEW_TOPNAV);
+@@ -585,6 +610,15 @@ export default function LayoutBrowser({
+         >
+           <FileOpenOutlinedIcon />
+         </IconButton>,
++        <IconButton
++          color="primary"
++          key="import-server-layouts"
++          onClick={importServerLayouts}
++          aria-label="Import layouts from server"
++          title="Import layouts from server"
++        >
++          <CloudDownloadOutlinedIcon />
++        </IconButton>,
+       ].filter(Boolean)}
+     >
+       {promptModal}
+diff --git a/packages/studio-base/src/panels/ThreeDeeRender/Input.ts b/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
+index fb37b28..b536b97 100644
+--- a/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
++++ b/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
+@@ -132,16 +132,29 @@ export class Input extends EventEmitter<InputEvents> {
+     this.emit("click", this.cursorCoords, this.worldSpaceCursorCoords, event);
+   };
+ 
++  private convertEvent = (event: TouchEvent): MouseEvent | null => {
++    // Helper function to convert TouchEvent to fake MouseEvent
++    let touch = event.touches[0];
++    if (!touch || !event.target) return null;
++    let rect = (event.target as Element).getBoundingClientRect();
++    // Other code only uses .offsetX/Y, so other attributes are not necessary
++    let ev = { offsetX: touch.pageX - rect.left, offsetY: touch.pageY - rect.top };
++    return ev as MouseEvent;
++  }
++
+   private onTouchStart = (event: TouchEvent): void => {
+-    const touch = event.touches[0];
+-    if (touch) {
+-      this.startClientPos = new THREE.Vector2(touch.clientX, touch.clientY);
+-    }
+     event.preventDefault();
++    let ev = this.convertEvent(event);
++    if (!ev) return;
++    this.startClientPos = new THREE.Vector2(ev.offsetX, ev.offsetY);
++    this.updateCursorCoords(ev);
+   };
+ 
+   private onTouchEnd = (event: TouchEvent): void => {
+     event.preventDefault();
++    // "touchend" doesn't have any touches, so we can't create a proper event
++    let ev = {} as MouseEvent;
++    this.emit("click", this.cursorCoords, this.worldSpaceCursorCoords, ev);
+   };
+ 
+   private onTouchMove = (event: TouchEvent): void => {
+diff --git a/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts b/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
+index 3432f5d..cb31f7f 100644
+--- a/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
++++ b/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
+@@ -178,7 +178,8 @@ export class PublishClickTool extends SceneExtension<Renderable<BaseUserData>, P
+             publishClickType: this.publishClickType,
+             point: { x: this.point1.x, y: this.point1.y, z: this.point1.z },
+           });
+-          this._setState("idle");
++          // Prevent "publish point" from deactivating after click
++          // this._setState("idle");
+         } else {
+           this._setState("place-second-point");
+         }
+diff --git a/packages/studio-web/src/index.tsx b/packages/studio-web/src/index.tsx
+index f6209a1..a1bc699 100644
+--- a/packages/studio-web/src/index.tsx
++++ b/packages/studio-web/src/index.tsx
+@@ -9,6 +9,7 @@ import Logger from "@foxglove/log";
+ import { IDataSourceFactory } from "@foxglove/studio-base";
+ 
+ import VersionBanner from "./VersionBanner";
++import { showOpenFilePicker } from "file-system-access";
+ 
+ const log = Logger.getLogger(__filename);
+ 
+@@ -31,6 +32,10 @@ type MainParams = {
+ export async function main(params: MainParams = {}): Promise<void> {
+   log.debug("initializing");
+ 
++  // Support for "import layout" function on mobile devices
++  // Install extra dependencies with "yarn add -D file-system-access"
++  (window as any).showOpenFilePicker = showOpenFilePicker;
++
+   window.onerror = (...args) => {
+     console.error(...args);
+   };
