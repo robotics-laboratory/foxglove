@@ -1,23 +1,19 @@
-services:
-  foxglove-amd64:
-    image: cr.yandex/crp8hpfj5tuhlaodm4dl/foxglove:amd64-0.2.0
-    container_name: foxglove
-    build:
-      context: .
-      args: { ARCH: linux/amd64 }
-    tty: true
-    ports:
-      - ${FOXGLOVE_PORT:-8080}:8080
-    volumes:
-      - foxglove-layouts:/src/layouts
+version: "3.9"
 
-  foxglove-arm64:
-    image: cr.yandex/crp8hpfj5tuhlaodm4dl/foxglove:arm64-0.2.0
-    container_name: foxglove
+services:
+  foxglove:
+    container_name: "${CONTAINER_NAME:-foxglove-${USER}}"
+    image: registry.robotics-lab.ru/foxglove:0.2.0
+    tty: true
     build:
       context: .
-      args: { ARCH: linux/arm64/v8 }
-    tty: true
+      tags:
+          - "registry.robotics-lab.ru/foxglove:latest"
+          - "registry.robotics-lab.ru/foxglove:0.2.0"
+      x-bake:
+        platforms: [linux/arm64, linux/amd64]
+        cache-to: "type=registry,ref=registry.robotics-lab.ru/foxglove:cache,mode=max"
+        cache-from: "type=registry,ref=registry.robotics-lab.ru/foxglove:cache"
     ports:
       - ${FOXGLOVE_PORT:-8080}:8080
     volumes:
@@ -25,3 +21,7 @@ services:
 
 volumes:
   foxglove-layouts:
+
+networks:
+  default:
+    name: "${CONTAINER_NAME:-foxglove-${USER}}"
