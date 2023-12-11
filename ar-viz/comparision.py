@@ -2,14 +2,13 @@ import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 
-camera_matrix = np.array([[3.24364167e+03, 0.00000000e+00, 9.38618477e+02],
-                          [0.00000000e+00, 3.22055936e+03, 5.82990476e+02],
+camera_matrix = np.array([[1.75816631e+03, 0.00000000e+00, 9.95261535e+02],
+                          [0.00000000e+00, 1.74374606e+03, 5.86214872e+02],
                           [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
-distortion_coefficients = np.array([[ 7.10199928e-01, -1.37853150e+01, -1.50329953e-03, -7.73077998e-03, 4.65342208e+01]])
+distortion_coefficients = np.array([[1.50497653e-01, -1.14192203e+00, -8.38537659e-04,
+                                      -1.96202401e-03, 1.08294422e+00]])
 
-image = cv2.imread('/Users/anastasia/meowmeowX/cv/Photo on 2023-12-5 at 18.39 #3.jpg')
-if image is None:
-    raise FileNotFoundError("无法加载图片，请检查文件路径和文件完整性")
+image = cv2.imread('/Users/anastasia/meowmeowX/cv/dataset 4/frame_149.jpg')
 
 h, w = image.shape[:2]
 
@@ -18,8 +17,8 @@ new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, distortion
 undistorted_image = cv2.undistort(image, camera_matrix, distortion_coefficients, None, new_camera_matrix)
 
 # 裁剪图像
-# x, y, w, h = roi
-# undistorted_image = undistorted_image[y:y+h, x:x+w]
+x, y, w, h = roi
+undistorted_image = undistorted_image[y:y+h, x:x+w]
 
 plt.figure(figsize=(10, 5))
 
