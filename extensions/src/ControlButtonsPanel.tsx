@@ -1,53 +1,44 @@
-import { PanelExtensionContext, SettingsTreeAction, SettingsTreeNode, SettingsTreeNodes, Topic } from "@foxglove/studio";
-import { MouseEventHandler, createRef, useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { PanelExtensionContext, SettingsTreeAction, SettingsTreeNode, SettingsTreeNodes, Topic } from "@foxglove/studio"
+import { MouseEventHandler, TouchEventHandler, useCallback, useEffect, useLayoutEffect, useState } from "react";
 import ReactDOM from "react-dom";
+import FocusLock from "react-focus-lock";
 import _ from "lodash";
 
+import { JoystickManagerOptions, Position } from "nipplejs";
+import nipplejs from "nipplejs";
 
-const upArrow = ["M64.1 0C28.8 0 .2 28.7.2 64s28.6 64 63.9 64S128 99.3 128 " +
-                 "64c-.1-35.3-28.7-64-63.9-64zm0 122.7C31.7 122.7 5.5 96.4 5.5 " +
-                 "64c0-32.4 26.2-58.7 58.6-58.7 32.3 0 58.6 26.3 58.6 58.7-.1 " +
-                 "32.4-26.3 58.7-58.6 58.7zm-.3-93.9L33.1 59.5l3.8 3.8 " +
-                 "24.5-24.5V104h5.3V39.4l24 24 3.8-3.8-30.7-30.8z", ];
+import Gamepad from "react-gamepad" ;
 
-const downArrow = ["M64.1 0C28.8 0 .2 28.7.2 64s28.6 64 63.9 64S128 99.3 128 " +
-                   "64c-.1-35.3-28.7-64-63.9-64zm0 122.7C31.7 122.7 5.5 96.4 5.5 " +
-                   "64c0-32.4 26.2-58.7 58.6-58.7s58.6 26.3 58.6 58.7c-.1 32.4-26.3 " +
-                   "58.7-58.6 58.7zm2.6-34.2V24h-5.3v64.5L37.1 64.2 " +
-                   "33.3 68 64 98.8l.1-.1.1.1L94.9 68 91 64.2 66.7 88.5z", ];
+import { createTheme, ThemeProvider } from "@mui/system";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
+import LockOpenTwoToneIcon from "@mui/icons-material/LockOpenTwoTone";
+import LockTwoToneIcon from "@mui/icons-material/LockTwoTone";
 
-const leftArrow = ["m64 37-3.8-3.8L29.5 64l30.7 30.8L64 91 39.8 66.7H104v-5.3H39.8L64 " +
-                   "37zm.1-37C28.8 0 .2 28.7.2 64s28.6 64 63.9 64S128 99.3 128 " +
-                   "64c-.1-35.3-28.7-64-63.9-64zm0 122.7C31.7 122.7 5.5 96.4 5.5 " +
-                   "64c0-32.4 26.2-58.7 58.6-58.7s58.6 26.3 58.6 58.7c-.1 32.4-26.3 58.7-58.6 58.7z", ];
+import KeyboardAltOutlinedIcon from "@mui/icons-material/KeyboardAltOutlined";
+import TouchAppOutlinedIcon from "@mui/icons-material/TouchAppOutlined";
+import SportsEsportsOutlinedIcon from "@mui/icons-material/SportsEsportsOutlined";
 
-const rightArrow = ["m68.4 33.5-3.8 3.8L89.2 62H24.1v5.3h64.3l-23.8 24 3.8 3.8 " +
-                    "30.7-30.8-.1-.1.1-.1-30.7-30.6zM64.1 0C28.8 0 .2 28.7.2 64s28.6 " +
-                    "64 63.9 64S128 99.3 128 64c-.1-35.3-28.7-64-63.9-64zm0 122.7C31.7 " +
-                    "122.7 5.5 96.4 5.5 64c0-32.4 26.2-58.7 58.6-58.7 32.3 0 58.6 26.3 " +
-                    "58.6 58.7-.1 32.4-26.3 58.7-58.6 58.7z", ];
+import { SvgIconTypeMap } from "@mui/material";
+import { OverridableComponent } from "@mui/material/OverridableComponent";
 
-const lockButton = ["M51.5 103.229h25a1.75 1.75 0 0 0 1.685-2.223L73.14 83.014a12.462 12.462 0 1 0-18.28 0l-5.045 17.993a1.75 1.75 0 0 0 1.685 2.223zm7.008-20.263a1.75 1.75 0 0 0-.513-1.772 8.962 8.962 0 1 1 12.011 0 1.75 1.75 0 0 0-.513 1.772l4.7 16.763H53.808z",
-                    "M112.654 40.135H94.5V35.25a30.5 30.5 0 0 0-61 0v4.885H15.346a1.75 1.75 0 0 0-1.75 1.75V121.5a1.75 1.75 0 0 0 1.75 1.75h97.308a1.75 1.75 0 0 0 1.75-1.75V41.885a1.75 1.75 0 0 0-1.75-1.75zM37 35.25a27 27 0 1 1 54 0v4.885h-2.5V35.25a24.5 24.5 0 0 0-49 0v4.885H37zm48 4.885H43V35.25a21 21 0 0 1 42 0zm25.9 79.615H17.1V43.635h93.8z"];
 
-export const focusGradient = "radial-gradient(circle, rgba(162,186,199,0.6306897759103641) 0%, rgba(148,187,233,0) 78%)";
-
-interface PanelButtonOptions {
-  arrow_svg: Array<string>;
-  row: string;
-  col: string;
-  is_focused: Function;
-  MouseClickHandler?: MouseEventHandler<HTMLDivElement>;
-  MouseDownHandler?: MouseEventHandler<HTMLDivElement>
+interface ArrowOptions {
+  Icon: OverridableComponent<SvgIconTypeMap> & { muiName: string }
+  row: string
+  col: string
+  is_active: Function
+  mouseDownHandler: MouseEventHandler<HTMLDivElement>
+  mouseUpHandler: MouseEventHandler<HTMLDivElement>
+  touchStartHandler: TouchEventHandler<HTMLDivElement>
+  touchEndHandler: TouchEventHandler<HTMLDivElement>
 }
 
 type Config = {
-  topic: undefined | string;
-  frequency: number;
-};
-
-type ButtonPanelProps = {
-  context: PanelExtensionContext
+  topic: undefined | string
+  frequency: number
 }
 
 function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTreeNodes {
@@ -67,87 +58,248 @@ function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTr
   return { general };
 }
 
-const lockRef = createRef<HTMLInputElement>()
-
-function PanelButton({ arrow_svg, row, col, is_focused,
-                       MouseClickHandler=undefined,
-                       MouseDownHandler=undefined}: PanelButtonOptions): JSX.Element {
-  return (
-    <div style={{gridRow: row, gridColumn: col}}
-         onClick={MouseClickHandler} onMouseDown={MouseDownHandler}>
-      <svg style={{background: is_focused() ? focusGradient : "0"}}
-           version="1.1" x="0" y="0" viewBox="0 0 128 128">
-          {(arrow_svg ?? []).map((item) => (
-            <path d={item}/>
-          ))}
-      </svg>
-    </div>);
-}
-
-
-function ConttrolButtonsPanel(props: ButtonPanelProps): JSX.Element {
+function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): JSX.Element {
   
-  const { context } = props;
-  const { saveState } = context;
-
   const [velocity, setVelocity] = useState<number>(0);
   const [steering, setSteering] = useState<number>(0);
-  
-  const moveForward = () => velocity ? setVelocity(0) :setVelocity(1);
-  const moveBackward = () => velocity ? setVelocity(0) :setVelocity(-1);
-  const steerLeft = () => steering ? setSteering(0) : setSteering(-1);
-  const steerRight = () => steering ? setSteering(0) : setSteering(1);
-  
+
+  const moveForward = () => velocity < 0 ? setVelocity(0) :setVelocity(1);
+  const moveBackward = () => velocity > 0 ? setVelocity(0) :setVelocity(-1);
+  const steerLeft = () => steering > 0 ? setSteering(0) : setSteering(-1);
+  const steerRight = () => steering < 0 ? setSteering(0) : setSteering(1);
   const stopSteer = () => setSteering(0);
   const stopMovement = () => setVelocity(0);
+
   const stopVehicle = () => {
     stopMovement();
     stopSteer();
   }
-  const getPositionMessage = () => new Map<string, number>([["velocity", velocity], ["steering", steering]]);
 
-  const [is_locked, setLockState] = useState<boolean>(false);
-  const changeLockedState = () => {
-    const node = lockRef.current
-    if (node) {
-      is_locked ? node.blur() : node.focus()
+  const getPositionMessage = () => `"velocity": ${velocity}, "steering": ${steering}`;
+
+  const [gamepadState, setGamepadState] = useState<string>("No devices available. Connect a gamepad and press any key on it");
+  const [chosenControlOption, setChosenControllOption] = useState<number[]>([1, 0, 0]);
+  const [locked, setLocked] = useState<boolean>(false);
+
+  const ControlOptionsBar = () => {
+    
+    const activeControllerOptionStyle = (index: number) =>(
+      {
+        borderBottom: chosenControlOption[index] ? "2px solid black" : "none",
+        background: chosenControlOption[index] ? "radial-gradient(ellipse at bottom, rgba(130,132,139,0.6026785714285714) 10%, rgba(255,255,255, 0) 68%)" : "none",
+        padding: "1vh",
+        cursor: "pointer"
+      }
+    )
+
+    const changeActiveControllerOption = (index: number) => {
+      setLocked(false);
+      let temp = [0, 0, 0];
+      temp[index] = 1;
+      setChosenControllOption(temp);
     }
-    setLockState(!is_locked)
+
+    return (
+      <div>
+        <p style={{ background: "gradient", textAlign: "center" }}>
+          <span style={activeControllerOptionStyle(0)} onClick={() => changeActiveControllerOption(0)}>
+            <KeyboardAltOutlinedIcon fontSize="large"/>
+          </span>
+          <span  style={activeControllerOptionStyle(1)} onClick={() => changeActiveControllerOption(1)}>
+            <TouchAppOutlinedIcon fontSize="large"/>
+          </span>
+          <span  style={activeControllerOptionStyle(2)} onClick={() => changeActiveControllerOption(2)}>
+            <SportsEsportsOutlinedIcon fontSize="large"/>
+          </span>
+          
+        </p>
+      </div>
+    )
   }
 
+  
+  const KeyboardController = () => {
+    
+    const GridButton = ({ Icon, row, col, is_active,
+                          mouseDownHandler, mouseUpHandler,
+                          touchStartHandler, touchEndHandler } : ArrowOptions) => (
+      <div style={{ gridRow: row, gridColumn: col }}
+                    onMouseDown={mouseDownHandler} onMouseUp={mouseUpHandler}
+                    onMouseLeave={mouseUpHandler}
+                    onTouchStart={touchStartHandler}
+                    onTouchEnd={touchEndHandler}>
+      <Icon fontSize="large"
+            sx={{ 
+            color: "white",
+            backgroundColor: is_active() ? "background.active" : "background.disabled" 
+            }} />
+      </div>
+      )
+    
+    const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+      switch (event.code) {
+        case "ArrowUp":
+          moveForward();
+          return;
+        case "ArrowDown":
+          moveBackward();
+          return;
+        case "ArrowLeft":
+          steerLeft();
+          return;
+        case "ArrowRight":
+          steerRight();
+          return;
+        default:
+          return;
+      }
+    }
+
+    const handleKeyUp = (event: React.KeyboardEvent<HTMLInputElement>) => {
+      switch (event.code) {
+        case "ArrowUp" || "ArrowDown":
+          stopMovement();
+          return;
+        case "ArrowDown":
+          stopMovement();
+          return;
+        case "ArrowLeft" || "ArrowRight":
+          stopSteer();
+          return;
+        case "ArrowRight":
+          stopSteer();
+          return;
+        default:
+          return;
+      }
+    }
+
+    const changeLockedState = () => {
+      setLocked(!locked);
+    }
+    
+    const LockControl = () => (
+      <div>
+        <input type="text" style={{opacity: 0}}
+               onKeyDown={handleKeyDown} onKeyUp={handleKeyUp}/>
+        <div onClick={ changeLockedState }>
+          {locked ? <LockTwoToneIcon/> : <LockOpenTwoToneIcon/>}
+        </div>
+      </div>
+    )
+
+    return (
+      <div style={{display: "grid", gridTemplateColumns: "repeat(9, 1fr)", gap: "5px",
+                    gridAutoRows: "minmax(50px, auto)", maxWidth: "20vw", marginTop: "10vh"}}>
+          <div style={{gridRow: "2", gridColumn: "7"}}>
+            {locked ? <FocusLock><LockControl/></FocusLock> : <LockControl/>}
+          </div>
+
+          <GridButton Icon={ArrowUpwardIcon} row="3" col="5"
+                      is_active={() => velocity > 0}
+                      mouseDownHandler={moveForward}
+                      mouseUpHandler={stopVehicle}
+                      touchStartHandler={moveForward}
+                      touchEndHandler={stopMovement}/>
+          <GridButton Icon={ArrowBackIcon} row="4" col="4"
+                      is_active={() => steering < 0}
+                      mouseDownHandler={steerLeft}
+                      mouseUpHandler={stopVehicle}
+                      touchStartHandler={steerLeft}
+                      touchEndHandler={stopSteer}/>
+          <GridButton Icon={ArrowDownwardIcon} row="4" col="5" 
+                      is_active={() => velocity < 0}
+                      mouseDownHandler={moveBackward}
+                      mouseUpHandler={stopVehicle}
+                      touchStartHandler={moveBackward}
+                      touchEndHandler={stopMovement}/>
+          <GridButton Icon={ArrowForwardIcon} row="4" col="6" 
+                      is_active={() => steering > 0}
+                      mouseDownHandler={steerRight}
+                      mouseUpHandler={stopVehicle}
+                      touchStartHandler={steerRight}
+                      touchEndHandler={stopSteer}/>
+        </div>
+    )
+  }
+
+  const GamePadController = () => {
+    
+    const connectHandler = () => {
+      setGamepadState("Gamepad connected. Use l-stick to control the robot and RT (R2 on dualshock) to stop");
+    }
+
+    const disconnectHandler = () => {
+      setGamepadState("No devices available. Connect a gamepad and press any key on it");
+    }
+    
+    const axisChangeHandler = (axisName: string, value: number) => {
+      if (axisName == "LeftStickX") {
+        setSteering(Math.round(value * 100) / 100);
+      }
+      if (axisName == "LeftStickY") {
+        setVelocity(Math.round(value * 100) / 100);
+      }
+    }
+    
+    return (
+      <div style={{ marginTop: "10vh"}}>
+        <Gamepad 
+                //  stickThreshold={0.25}
+                //  deadZone={0.2}
+                 onConnect={connectHandler}
+                 onDisconnect={disconnectHandler}
+                 onAxisChange={axisChangeHandler}
+                 onRT={stopVehicle}>
+          <main></main>
+        </Gamepad>
+        <h2>{gamepadState}</h2>
+      </div>
+      
+    )
+  }
+
+
+  let startPoint: Position;
+  let manager: nipplejs.JoystickManager;
+
+  const initNipple = (colorScheme: string) => {
+    const zone = document.getElementById("nipple_zone") as HTMLDivElement;
+    const size = document.body.offsetWidth * 0.2;
+    let options: JoystickManagerOptions = {
+      zone: zone,
+      color: (colorScheme === "light" ? "black" : "white"),
+      size: size,
+      restOpacity: 0.8,
+      mode: "static",
+      dynamicPage: true,
+       position: { left: "50%", top: "60%" },
+    };
+    
+    manager = nipplejs.create(options);
+    manager.on("start", (evt, data) => {
+      console.log(evt);
+      startPoint = data.position;
+    })
+
+    manager.on("move", (evt, data) => {
+      console.log(evt);
+      let x = -(startPoint.x - data.position.x) / (0.5 * size);
+      let y = (startPoint.y - data.position.y) / (0.5 * size);
+      setVelocity(Math.round(y * 100) / 100);
+      setSteering(Math.round(x * 100) / 100);
+    })
+
+    manager.on("end", () => {
+      stopVehicle();
+    })
+
+    return true;
+  }
+  
+  const { saveState } = context;
   const [topics, setTopics] = useState<readonly Topic[]>([]);
 
-  const [keyValue] = useState<string>(" ");
-  
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLInputElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.code == "ArrowLeft")  {
-        steerLeft()
-      }
-      if (event.code == "ArrowUp")  {
-        moveForward()
-      }
-      if (event.code == "ArrowRight")  {
-        steerRight()
-      }
-      if (event.code == "ArrowDown")  {
-        moveBackward()
-      }
-    },
-    [steerLeft, moveForward, steerRight, moveForward],
-  );
-
-  const onKeyUp = useCallback(
-    (event: React.KeyboardEvent<HTMLInputElement>) => {
-      event.preventDefault();
-      event.stopPropagation();
-      stopMovement()
-    },
-    [stopMovement],
-  );
-  
   const [config, setConfig] = useState<Config>(() => {
     const partialConfig = context.initialState as Partial<Config>;
     const {
@@ -174,7 +326,7 @@ function ConttrolButtonsPanel(props: ButtonPanelProps): JSX.Element {
   const [renderDone, setRenderDone] = useState<() => void>(() => () => {});
   useLayoutEffect(() => {
     context.watch("topics");
-
+    initNipple("light");
     context.onRender = (renderState, done) => {
       setTopics(renderState.topics ?? []);
       setRenderDone(() => done);
@@ -193,23 +345,6 @@ function ConttrolButtonsPanel(props: ButtonPanelProps): JSX.Element {
 
   const { topic: currentTopic } = config;
   useLayoutEffect(() => {
-    if (!currentTopic) {
-      return;
-    }
-
-    context.advertise?.(currentTopic, "geometry_msgs/Twist", {
-      datatypes: new Map([
-        ["geometry_msgs/Vector3", ["geometry_msgs/Vector3"]],
-        ["geometry_msgs/Twist", ["geometry_msgs/Twist"]],
-      ]),
-    });
-
-    return () => {
-      context.unadvertise?.(currentTopic);
-    };
-  }, [context, currentTopic]);
-  
-  useLayoutEffect(() => {
     if (config.frequency <= 0) {
       return;
     }
@@ -223,38 +358,50 @@ function ConttrolButtonsPanel(props: ButtonPanelProps): JSX.Element {
         clearInterval(intervalHandle);
       };
     }
-    return
+    return;
   }, [context, config, currentTopic]);
 
   useLayoutEffect(() => {
     renderDone();
   }, [renderDone]);
 
+
+  const buttonTheme = createTheme({
+    palette:{
+      background: {
+        active: "#212121",
+        disabled: "#666666",
+        lightGray: "#cfd2dd"
+      },
+      fill: {
+
+      },
+      gradient: "radial-gradient(circle, rgba(73,75,88,1) 30%, rgba(255,255,255,0.96) 100%)"
+    }
+  })
+
   return (
-    <div style={{ padding: "1rem" }}>
-      <p>{getPositionMessage()}</p>
-      <input type="text" style={{opacity: 0}} value={keyValue} ref={lockRef} onKeyDown={onKeyDown} onKeyUp={onKeyUp}/>
-      <div style={{display: "grid",gridTemplateColumns: "repeat(9, 1fr)",
-                   gap: "10px", gridAutoRows: "minmax(50px, auto)"}}
-           onMouseUp={stopVehicle}>
-        <PanelButton row={"1"} col={"7"} arrow_svg={lockButton} is_focused={() => is_locked}
-                     MouseClickHandler={changeLockedState}/>
-        <PanelButton row={"2"} col={"5"} arrow_svg={upArrow} is_focused={() => velocity == 1}
-                     MouseDownHandler={moveForward}/>
-        <PanelButton row={"3"} col={"4"} arrow_svg={leftArrow} is_focused={() => steering == -1}
-                     MouseDownHandler={steerLeft}/>
-        <PanelButton row={"3"} col={"5"} arrow_svg={downArrow} is_focused={() => velocity == -1}
-                     MouseDownHandler={moveBackward}/>
-        <PanelButton row={"3"} col={"6"} arrow_svg={rightArrow} is_focused={() => steering == 1}
-                     MouseDownHandler={steerRight}/>
+    <ThemeProvider theme={buttonTheme}>
+      <div style={{ marginTop: "2.5vh", marginBottom: "2.5vh" }}>
+        <h2 style={{ textAlign: "center" }}>
+          { getPositionMessage() }
+        </h2>
       </div>
-      <div>{topics?.map(() => <span> </span>)}</div>
-    </div>
+      <ControlOptionsBar/>
+      
+      <div style={{margin: "auto", width: "50%"}}>
+        {!!chosenControlOption[0] && <KeyboardController/>}
+        <div id="nipple_zone" hidden={!chosenControlOption[1]}></div>
+        {!!chosenControlOption[2] && <GamePadController/>}
+      </div>
+    </ThemeProvider>
+    
   );
 }
 
 export function initControlButtonsPanel(context: PanelExtensionContext): () => void {
-  ReactDOM.render(<ConttrolButtonsPanel context={context} />, context.panelElement);
+  ReactDOM.render(<ControlButtonsPanel context={context} />, context.panelElement);
+
   return () => {
     ReactDOM.unmountComponentAtNode(context.panelElement);
   };
