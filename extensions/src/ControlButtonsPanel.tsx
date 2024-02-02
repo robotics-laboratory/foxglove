@@ -1,13 +1,11 @@
 import { PanelExtensionContext, SettingsTreeAction, SettingsTreeNode, SettingsTreeNodes, Topic } from "@foxglove/studio"
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { ros2humble as ros2 } from "@foxglove/rosmsg-msgs-common";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import FocusLock from "react-focus-lock";
 import _, { isUndefined } from "lodash";
 
 import { Joystick, JoystickShape } from "react-joystick-component"
-
-// import { JoystickManagerOptions, Position } from "nipplejs";
-// import nipplejs from "nipplejs";
 
 import { createTheme, ThemeProvider } from "@mui/system";
 import LockOpenTwoToneIcon from "@mui/icons-material/LockOpenTwoTone";
@@ -16,11 +14,64 @@ import QuestionMarkIcon from "@mui/icons-material/QuestionMark";
 
 import { IJoystickUpdateEvent } from "react-joystick-component/build/lib/Joystick";
 
-// const lStickRef = createRef<Joystick>()
-
 type Config = {
   topic: undefined | string
   frequency: number
+}
+
+type Message = {
+  header: 
+  {
+    frame_id: string,
+    stamp: {
+      sec: number,
+      nsec: number,
+    },
+  },
+  mode: number,
+  rel_curvature: number,
+  rel_velocity: number,
+};
+
+
+function createMsg(frame_id: string, curvature: number, velocity: number, mode: number): Message {
+  let date = new Date();
+  return { 
+    header: { 
+      frame_id: frame_id, 
+      stamp: { 
+        sec: Math.floor(date.getTime() / 1000),
+        nsec: date.getMilliseconds() * 1e+6,
+      },
+    }, 
+    mode: mode,
+    rel_curvature: curvature,
+    rel_velocity: velocity };
+};
+
+const messageDataTypes = new Map([
+  ["std_msgs/Header", ros2["std_msgs/Header"]],
+  ["std_msgs/Float64", ros2["std_msgs/Float64"]],
+  ["std_msgs/UInt8", ros2["std_msgs/UInt8"]],
+  ["truck_msgs/msg/RemoteControl", {
+      name: "truck_msgs/msg/RemoteControl",
+      definitions: [
+          {name: 'header', type: 'std_msgs/Header', isComplex: true, isArray: false}, 
+          {name: 'mode', type: 'uint8', isComplex: false, isArray: false}, 
+          {name: 'rel_curvature', type: 'float64', isComplex: false, isArray: false}, 
+          {name: 'rel_velocity', type: 'float64', isComplex: false, isArray: false}, 
+      ],
+  }]
+]);
+
+function validateTopic(topic: string | undefined): string | undefined {
+  if (topic == undefined) {
+    return "Invalid topic";
+  }
+  if (topic.length > 0 && topic[0] == '/') {
+    return undefined;
+  }
+  return "Invalid topic";
 }
 
 function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTreeNodes {
@@ -33,6 +84,7 @@ function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTr
         input: "autocomplete",
         value: config.topic,
         items: topics.map((t) => t.name),
+        error: validateTopic(config.topic)
       },
     },
   };
@@ -43,9 +95,11 @@ function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTr
 let controllers = new Map<number, Gamepad>();
 
 function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): JSX.Element {
-  
+  const frame_id = useRef<string>("base_link");
   const [velocity, _setVelocity] = useState<number>(0);
   const [steering, _setSteering] = useState<number>(0);
+  const [mode, setMode] = useState<number>(0);
+  const latestMsg = useRef<Message>(createMsg(frame_id.current, steering, velocity, mode));
 
   const setVelocity = (value: number) => {
     if ((velocity > 0 && value < 0) || (velocity < 0 && value > 0)) {
@@ -76,7 +130,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   const [leftArrowPressed, setLeftArrowPressed] = useState<number>(0);
   const [rightArrowPressed, setRightArrowPressed] = useState<number>(0);
 
-  const getPositionMessage = () => `"velocity": ${velocity}, "steering": ${steering}`;
+  // const getPositionMessage = () => `{"rel_velocity": ${velocity}, "rel_curvature": ${steering}, "mode": 1}`;
 
   const [locked, setLocked] = useState<boolean>(false);
 
@@ -128,9 +182,9 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
             {locked ? <FocusLock as="span"><LockControl/></FocusLock> : <LockControl/>}
           </span>
           <span style={{marginLeft: "20px"}}>
-            <span onClick={() => {}}><QuestionMarkIcon fontSize="large"/></span>
-            <span onClick={() => {}}><QuestionMarkIcon fontSize="large"/></span>
-            <span onClick={() => {}}><QuestionMarkIcon fontSize="large"/></span>
+            <span onClick={() => {setMode(0)}}><QuestionMarkIcon fontSize="large"/></span>
+            <span onClick={() => {setMode(1)}}><QuestionMarkIcon fontSize="large"/></span>
+            <span onClick={() => {setMode(2)}}><QuestionMarkIcon fontSize="large"/></span>
             <span onClick={() => {}}><QuestionMarkIcon fontSize="large"/></span>
           </span>
         </p>
@@ -139,8 +193,6 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   }
 
   const connectGamePadControl = () => {
-
-    setVelocity(velocity + 0.05)
 
     let haveEvents = 'GamepadEvent' in window;
     let rAF = window.requestAnimationFrame;
@@ -239,13 +291,25 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   }, []);
 
   const [renderDone, setRenderDone] = useState<() => void>(() => () => {});
+  
+  const currentTopic_ = "/control/input"
+
   useLayoutEffect(() => {
-    context.watch("topics");
     context.onRender = (renderState, done) => {
       setTopics(renderState.topics ?? []);
       setRenderDone(() => done);
     };
-  }, [context]);
+
+    context.watch("topics");
+
+    if (config.topic && !validateTopic(config.topic)) {
+      console.log(ros2["sensor_msgs/Joy"]);
+      console.log("DATATYPES:", messageDataTypes);
+      context.advertise?.(config.topic,  "truck_msgs/msg/RemoteControl", {messageDataTypes});
+    }
+      
+}, [context]);
+
 
   const movementDirections = () => [velocity >= 0 ? velocity : undefined, velocity <= 0 ? velocity : undefined, 
                                     steering <= 0 ? steering : undefined, steering >= 0 ? steering : undefined];
@@ -305,6 +369,10 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   }, [])
 
   useEffect(() => {
+    latestMsg.current = createMsg(frame_id.current, steering, velocity, mode)
+  }, [velocity, steering, mode])
+
+  useEffect(() => {
     const tree = buildSettingsTree(config, topics);
     context.updatePanelSettingsEditor({
       actionHandler: settingsActionHandler,
@@ -312,21 +380,33 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     });
     saveState(config);
   }, [config, context, saveState, settingsActionHandler, topics]);
+  
 
+  let publish = (() => {
+    let date = new Date();
+    latestMsg.current.header.stamp.sec = Math.floor(date.getTime() / 1000);
+    latestMsg.current.header.stamp.nsec = date.getMilliseconds() * 1e+6;
+    if (currentTopic && !validateTopic(currentTopic)) {
+      context.publish?.(currentTopic_, latestMsg.current);
+    }
+  })
 
   const { topic: currentTopic } = config;
+  
   useLayoutEffect(() => {
     if (config.frequency <= 0) {
       return;
     }
-    if (currentTopic) {
+    if (currentTopic && !validateTopic(currentTopic)) {
+      context.advertise?.(currentTopic,  "truck_msgs/msg/RemoteControl", {messageDataTypes});
       const intervalMs = (1000) / config.frequency;
-      context.publish?.(currentTopic, getPositionMessage());
       const intervalHandle = setInterval(() => {
-        context.publish?.(currentTopic, getPositionMessage());
+        publish();
       }, intervalMs);
       return () => {
         clearInterval(intervalHandle);
+        context.unadvertise?.(currentTopic);
+        console.log("unadvertised", currentTopic)
       };
     }
     return;
@@ -355,7 +435,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     <ThemeProvider theme={buttonTheme}>
       <div style={{ marginTop: "2.5vh", marginBottom: "2.5vh" }}>
         <h2 style={{ textAlign: "center" }}>
-          velocity: {velocity}, steering: {steering}
+          velocity: {velocity}, steering: {steering}, mode: {mode}
         </h2>
       </div>
       <KeyboardControl/>
