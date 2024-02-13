@@ -1,6 +1,6 @@
 import { PanelExtensionContext, SettingsTreeAction, SettingsTreeNode, SettingsTreeNodes, Topic } from "@foxglove/studio"
 import { ros2humble as ros2 } from "@foxglove/rosmsg-msgs-common";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createRef, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import FocusLock from "react-focus-lock";
 import _, { isUndefined } from "lodash";
@@ -10,7 +10,10 @@ import { Joystick, JoystickShape } from "react-joystick-component"
 import { createTheme, ThemeProvider } from "@mui/system";
 import LockOpenTwoToneIcon from "@mui/icons-material/LockOpenTwoTone";
 import LockTwoToneIcon from "@mui/icons-material/LockTwoTone";
-import QuestionMarkIcon from "@mui/icons-material/QuestionMark";
+import SyncDisabledIcon from '@mui/icons-material/SyncDisabled';
+import LooksOneIcon from '@mui/icons-material/LooksOne';
+import Looks2Icon from '@mui/icons-material/LooksOne';
+import Looks3Icon from '@mui/icons-material/Looks3';
 
 import { IJoystickUpdateEvent } from "react-joystick-component/build/lib/Joystick";
 
@@ -28,13 +31,13 @@ type Message = {
       nsec: number,
     },
   },
-  mode: number,
+  mode: number|undefined,
   rel_curvature: number,
   rel_velocity: number,
 };
 
 
-function createMsg(frame_id: string, curvature: number, velocity: number, mode: number): Message {
+function createMsg(frame_id: string, curvature: number, velocity: number, mode: number|undefined): Message {
   let date = new Date();
   return { 
     header: { 
@@ -96,9 +99,11 @@ let controllers = new Map<number, Gamepad>();
 
 function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): JSX.Element {
   const frame_id = useRef<string>("base_link");
+  const joystick_ref = createRef<HTMLDivElement>();
+  
   const [velocity, _setVelocity] = useState<number>(0);
   const [steering, _setSteering] = useState<number>(0);
-  const [mode, setMode] = useState<number>(0);
+  const [mode, setMode] = useState<number|undefined>(undefined);
   const latestMsg = useRef<Message>(createMsg(frame_id.current, steering, velocity, mode));
 
   const setVelocity = (value: number) => {
@@ -182,10 +187,10 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
             {locked ? <FocusLock as="span"><LockControl/></FocusLock> : <LockControl/>}
           </span>
           <span style={{marginLeft: "20px"}}>
-            <span onClick={() => {setMode(0)}}><QuestionMarkIcon fontSize="large"/></span>
-            <span onClick={() => {setMode(1)}}><QuestionMarkIcon fontSize="large"/></span>
-            <span onClick={() => {setMode(2)}}><QuestionMarkIcon fontSize="large"/></span>
-            <span onClick={() => {}}><QuestionMarkIcon fontSize="large"/></span>
+            <span onClick={() => {setMode(0)}} style={{marginRight: '20px'}}><SyncDisabledIcon sx={{color: mode == 0 ? "red" : "disabled"}} fontSize="large"/></span>
+            <span onClick={() => {setMode(1)}}><LooksOneIcon sx={{color: mode == 1 ? "green" : "disabled"}} fontSize="large"/></span>
+            <span onClick={() => {setMode(2)}}><Looks2Icon sx={{color: mode == 2 ? "olive" : "disabled"}} fontSize="large"/></span>
+            <span onClick={() => {setMode(3)}}><Looks3Icon sx={{color: mode == 3 ? "blue" : "disabled"}} fontSize="large"/></span>
           </span>
         </p>
       </div>
@@ -314,7 +319,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   const movementDirections = () => [velocity >= 0 ? velocity : undefined, velocity <= 0 ? velocity : undefined, 
                                     steering <= 0 ? steering : undefined, steering >= 0 ? steering : undefined];
   const checkButtonns = () => {
-    if (!locked) {
+    if (!locked || !mode) {
       return;
     }
 
@@ -369,6 +374,10 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   }, [])
 
   useEffect(() => {
+    if (!mode) {
+      setSteering(0);
+      setVelocity(0);
+    }
     latestMsg.current = createMsg(frame_id.current, steering, velocity, mode)
   }, [velocity, steering, mode])
 
@@ -382,14 +391,22 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   }, [config, context, saveState, settingsActionHandler, topics]);
   
 
-  let publish = (() => {
+  let publish = () => {
+    if (isUndefined(mode)) {
+      return;
+    }
     let date = new Date();
     latestMsg.current.header.stamp.sec = Math.floor(date.getTime() / 1000);
     latestMsg.current.header.stamp.nsec = date.getMilliseconds() * 1e+6;
+    if (mode == 0) {
+      latestMsg.current.rel_curvature = 0;
+      latestMsg.current.rel_velocity = 0;
+      setMode(undefined);
+    }
     if (currentTopic && !validateTopic(currentTopic)) {
       context.publish?.(currentTopic_, latestMsg.current);
     }
-  })
+  }
 
   const { topic: currentTopic } = config;
   
@@ -431,16 +448,32 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     }
   })
 
+  const useRefDimensions = (ref: React.RefObject<HTMLDivElement>) => {
+    const [dimensions, setDimensions] = useState({ width: 1, height: 2 })
+    useEffect(() => {
+      if (ref.current) {
+        const boundingRect = ref.current.getBoundingClientRect()
+        const { width, height } = boundingRect
+        setDimensions({ width: Math.round(width), height: Math.round(height) })
+      }
+    }, [ref])
+    return dimensions
+  }
+
+  const dimensions = useRefDimensions(joystick_ref);
+
   return (
     <ThemeProvider theme={buttonTheme}>
       <div style={{ marginTop: "2.5vh", marginBottom: "2.5vh" }}>
         <h2 style={{ textAlign: "center" }}>
-          velocity: {velocity}, steering: {steering}, mode: {mode}
+          velocity: {velocity}, steering: {steering}, mode: {isUndefined(mode) ? 'not enabled' : mode}
         </h2>
+        <p>Dimensions: {dimensions.width}w {dimensions.height}h</p>
       </div>
       <KeyboardControl/>
       <div id="joystick-area" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px",
-                                       gridAutoRows: "minmax(50px, auto)"}}>
+                                       gridAutoRows: "minmax(50px, auto)"}}
+           ref={joystick_ref} onResize={()=>{console.log('!!!')}} onResizeCapture={()=>{console.log('!!!')}}>
         <div id="left-stick" style={{gridRow: "2", gridColumn: "1"}}>
           <div style={{width: "50%", margin: "auto"}}>
             <Joystick controlPlaneShape={JoystickShape.AxisY}
@@ -452,6 +485,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
                           setVelocity(event.y)
                         }
                       }}
+                      size={dimensions.width * 0.2}
                       stop={()=> setVelocity(0)}
                       />
           </div>
@@ -467,6 +501,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
                           setSteering(event.x)
                         }
                       }}
+                      size={dimensions.width * 0.2}
                       stop={()=> setSteering(0)}
                       />
           </div>
