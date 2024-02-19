@@ -12,7 +12,7 @@ import LockOpenTwoToneIcon from "@mui/icons-material/LockOpenTwoTone";
 import LockTwoToneIcon from "@mui/icons-material/LockTwoTone";
 import SyncDisabledIcon from '@mui/icons-material/SyncDisabled';
 import LooksOneIcon from '@mui/icons-material/LooksOne';
-import Looks2Icon from '@mui/icons-material/LooksOne';
+import LooksTwoIcon from '@mui/icons-material/LooksTwo';
 import Looks3Icon from '@mui/icons-material/Looks3';
 
 import { IJoystickUpdateEvent } from "react-joystick-component/build/lib/Joystick";
@@ -23,7 +23,7 @@ type Config = {
 }
 
 type Message = {
-  header: 
+  header:
   {
     frame_id: string,
     stamp: {
@@ -31,25 +31,26 @@ type Message = {
       nsec: number,
     },
   },
-  mode: number|undefined,
-  rel_curvature: number,
-  rel_velocity: number,
+  mode: number | undefined,
+  curvature_ratio: number,
+  velocity_ratio: number,
 };
 
 
-function createMsg(frame_id: string, curvature: number, velocity: number, mode: number|undefined): Message {
+function createMsg(frame_id: string, curvature: number, velocity: number, mode: number | undefined): Message {
   let date = new Date();
-  return { 
-    header: { 
-      frame_id: frame_id, 
-      stamp: { 
+  return {
+    header: {
+      frame_id: frame_id,
+      stamp: {
         sec: Math.floor(date.getTime() / 1000),
         nsec: date.getMilliseconds() * 1e+6,
       },
-    }, 
+    },
     mode: mode,
-    rel_curvature: curvature,
-    rel_velocity: velocity };
+    curvature_ratio: curvature,
+    velocity_ratio: velocity
+  };
 };
 
 const messageDataTypes = new Map([
@@ -57,13 +58,13 @@ const messageDataTypes = new Map([
   ["std_msgs/Float64", ros2["std_msgs/Float64"]],
   ["std_msgs/UInt8", ros2["std_msgs/UInt8"]],
   ["truck_msgs/msg/RemoteControl", {
-      name: "truck_msgs/msg/RemoteControl",
-      definitions: [
-          {name: 'header', type: 'std_msgs/Header', isComplex: true, isArray: false}, 
-          {name: 'mode', type: 'uint8', isComplex: false, isArray: false}, 
-          {name: 'rel_curvature', type: 'float64', isComplex: false, isArray: false}, 
-          {name: 'rel_velocity', type: 'float64', isComplex: false, isArray: false}, 
-      ],
+    name: "truck_msgs/msg/RemoteControl",
+    definitions: [
+      { name: 'header', type: 'std_msgs/Header', isComplex: true, isArray: false },
+      { name: 'mode', type: 'uint8', isComplex: false, isArray: false },
+      { name: 'curvature_ratio', type: 'float64', isComplex: false, isArray: false },
+      { name: 'velocity_ratio', type: 'float64', isComplex: false, isArray: false },
+    ],
   }]
 ]);
 
@@ -97,13 +98,85 @@ function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTr
 
 let controllers = new Map<number, Gamepad>();
 
+
+const KeyboardControl = (props: any) => {
+  // FIXME
+  const {
+    mode,
+    setMode,
+    locked, setLocked,
+    setUpArrowPressed,
+    setDownArrowPressed,
+    setLeftArrowPressed,
+    setRightArrowPressed,
+    stopVehicle,
+  } = props;
+
+  const checkPressed = (eventCode: string, value: number) => {
+    switch (eventCode) {
+      case "ArrowUp":
+        setUpArrowPressed(value)
+        return;
+      case "ArrowDown":
+        setDownArrowPressed(value)
+        return;
+      case "ArrowLeft":
+        setLeftArrowPressed(value)
+        return;
+      case "ArrowRight":
+        setRightArrowPressed(value)
+        return;
+      default:
+        return;
+    }
+  }
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    checkPressed(event.code, 1);
+  }
+
+  const handleKeyUp = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    checkPressed(event.code, 0);
+  }
+
+  const changeLockedState = () => {
+    setLocked(!locked)
+  }
+
+  const LockControl = () => {
+    return (
+      <span tabIndex={0} onKeyDown={handleKeyDown} onKeyUp={handleKeyUp} onBlur={stopVehicle}>
+        <span onClick={changeLockedState}>
+          {locked ? <LockTwoToneIcon fontSize="large" /> : <LockOpenTwoToneIcon fontSize="large" />}
+        </span>
+      </span>
+    )
+  }
+
+  return (
+    <div>
+      <p style={{ background: "gradient", textAlign: "center" }}>
+        <span>
+          {/* {locked ? <FocusLock as="span"><LockControl/></FocusLock> : <LockControl/>} */}
+        </span>
+        <span style={{ marginLeft: "20px" }}>
+          KOK
+          <span onClick={() => { setMode(0) }} style={{ marginRight: '20px' }}><SyncDisabledIcon sx={{ color: mode == 0 ? "red" : "disabled" }} fontSize="large" /></span>
+          <span onClick={() => { setMode(1) }}><LooksOneIcon sx={{ color: mode == 1 ? "green" : "disabled" }} fontSize="large" /></span>
+          <span onClick={() => { setMode(2) }}><LooksTwoIcon sx={{ color: mode == 2 ? "olive" : "disabled" }} fontSize="large" /></span>
+          <span onClick={() => { setMode(3) }}><Looks3Icon sx={{ color: mode == 3 ? "blue" : "disabled" }} fontSize="large" /></span>
+        </span>
+      </p>
+    </div>
+  )
+}
+
 function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): JSX.Element {
   const frame_id = useRef<string>("base_link");
   const joystick_ref = createRef<HTMLDivElement>();
-  
+
   const [velocity, _setVelocity] = useState<number>(0);
   const [steering, _setSteering] = useState<number>(0);
-  const [mode, setMode] = useState<number|undefined>(undefined);
+  const [mode, setMode] = useState<number | undefined>(undefined);
   const latestMsg = useRef<Message>(createMsg(frame_id.current, steering, velocity, mode));
 
   const setVelocity = (value: number) => {
@@ -122,7 +195,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     _setSteering(Math.round(value * 100) / 100);
   }
 
-  
+
   const stopSteer = () => setSteering(0);
   const stopMovement = () => setVelocity(0);
   const stopVehicle = () => {
@@ -139,136 +212,79 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
 
   const [locked, setLocked] = useState<boolean>(false);
 
-  const KeyboardControl = () => {
-    const checkPressed = (eventCode: string, value: number) => {
-      switch (eventCode) {
-        case "ArrowUp":
-          setUpArrowPressed(value)
-          return;
-        case "ArrowDown":
-          setDownArrowPressed(value)
-          return;
-        case "ArrowLeft":
-          setLeftArrowPressed(value)
-          return;
-        case "ArrowRight":
-          setRightArrowPressed(value)
-          return;
-        default:
-          return;
-      }
-    }
-    const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-      checkPressed(event.code, 1);
-    }
 
-    const handleKeyUp = (event: React.KeyboardEvent<HTMLInputElement>) => {
-      checkPressed(event.code, 0);
-    }
+  // const connectGamePadControl = () => {
 
-    const changeLockedState = () => {
-      setLocked(!locked)
-    }
+  //   let haveEvents = 'GamepadEvent' in window;
+  //   let rAF = window.requestAnimationFrame;
 
-    const LockControl = () => {
-      return (
-        <span tabIndex={0} onKeyDown={handleKeyDown} onKeyUp={handleKeyUp} onBlur={stopVehicle}>
-          <span onClick={ changeLockedState }>
-            {locked ? <LockTwoToneIcon fontSize="large"/> : <LockOpenTwoToneIcon fontSize="large"/>}
-          </span>
-        </span>
-      )
-    }
+  //   const connectHandler = (event: GamepadEvent) => {
+  //     console.log("connected", event.gamepad)
+  //     addGamepad(event.gamepad);
+  //   }
 
-    return (
-      <div>
-        <p style={{ background: "gradient", textAlign: "center" }}>
-          <span>
-            {locked ? <FocusLock as="span"><LockControl/></FocusLock> : <LockControl/>}
-          </span>
-          <span style={{marginLeft: "20px"}}>
-            <span onClick={() => {setMode(0)}} style={{marginRight: '20px'}}><SyncDisabledIcon sx={{color: mode == 0 ? "red" : "disabled"}} fontSize="large"/></span>
-            <span onClick={() => {setMode(1)}}><LooksOneIcon sx={{color: mode == 1 ? "green" : "disabled"}} fontSize="large"/></span>
-            <span onClick={() => {setMode(2)}}><Looks2Icon sx={{color: mode == 2 ? "olive" : "disabled"}} fontSize="large"/></span>
-            <span onClick={() => {setMode(3)}}><Looks3Icon sx={{color: mode == 3 ? "blue" : "disabled"}} fontSize="large"/></span>
-          </span>
-        </p>
-      </div>
-    )
-  }
+  //   const disconnectHandler = (event: GamepadEvent) => {
+  //     console.log("disconnected")
+  //     removeGamepad(event.gamepad);
+  //     stopVehicle()
+  //   }
 
-  const connectGamePadControl = () => {
+  //   const addGamepad = (gamepad: Gamepad) => {
+  //     controllers.set(gamepad.index, gamepad)
+  //     rAF(updateStatus);
+  //   }
 
-    let haveEvents = 'GamepadEvent' in window;
-    let rAF = window.requestAnimationFrame;
-    
-    const connectHandler = (event: GamepadEvent) => {
-      console.log("connected", event.gamepad)
-      addGamepad(event.gamepad);
-    }
 
-    const disconnectHandler = (event: GamepadEvent) => {
-      console.log("disconnected")
-      removeGamepad(event.gamepad);
-      stopVehicle()
-    }
+  //   const removeGamepad = (gamepad: Gamepad) => {
+  //     controllers.delete(gamepad.index)
+  //   }
 
-    const addGamepad = (gamepad: Gamepad) => {
-      controllers.set(gamepad.index, gamepad)
-      rAF(updateStatus);
-    }
+  //   const scanGamepads = () => {
+  //     let gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+  //     for (let i = 0; i < gamepads.length; i++) {
+  //       if (gamepads[i]) {
+  //         return gamepads[i];
+  //       }
+  //     }
+  //     return null;
+  //   }
 
-    
-    const removeGamepad = (gamepad: Gamepad) => {
-      controllers.delete(gamepad.index)
-    }
+  //   const updateStatus = () => {
+  //     let controller = scanGamepads();
+  //     const x = controller?.axes?.at(2)
+  //     const y = controller?.axes?.at(1)
+  //     if (y) {
+  //       setVelocity(-y)
+  //     }
+  //     if (x) {
+  //       setSteering(x)
+  //     }
+  //     let buttons = controller?.buttons
+  //     if (buttons) {
+  //       if (buttons[0]?.pressed) {
+  //         console.log("X pressed")
+  //       }
+  //       if (buttons[1]?.pressed) {
+  //         console.log("O pressed")
+  //       }
+  //       if (buttons[2]?.pressed) {
+  //         console.log("Square pressed")
+  //       }
+  //       if (buttons[3]?.pressed) {
+  //         console.log("Triangle pressed")
+  //       }
+  //     }
+  //     rAF(updateStatus);
+  //   }
 
-    const scanGamepads = () => {
-      let gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-      for (let i = 0; i < gamepads.length; i++) {
-        if (gamepads[i]) {
-          return gamepads[i];
-        }
-      }
-      return null;
-    }
+  //   if (haveEvents) {
+  //     window.addEventListener("gamepadconnected", connectHandler);
+  //     window.addEventListener("gamepaddisconnected", disconnectHandler);
+  //   } else {
+  //     setInterval(scanGamepads, 500);
+  //   }
+  // }
 
-    const updateStatus = () => {
-      let controller = scanGamepads();
-      const x = controller?.axes?.at(2)
-      const y = controller?.axes?.at(1)
-      if (y) {
-        setVelocity(-y)
-      }
-      if (x) {
-        setSteering(x)
-      }
-      let buttons = controller?.buttons
-      if (buttons) {
-        if (buttons[0]?.pressed) {
-          console.log("X pressed")
-        }
-        if (buttons[1]?.pressed) {
-          console.log("O pressed")
-        }
-        if (buttons[2]?.pressed) {
-          console.log("Square pressed")
-        }
-        if (buttons[3]?.pressed) {
-          console.log("Triangle pressed")
-        }
-      }
-      rAF(updateStatus);
-    }
-
-    if (haveEvents) {
-      window.addEventListener("gamepadconnected", connectHandler);
-      window.addEventListener("gamepaddisconnected", disconnectHandler);
-    } else {
-      setInterval(scanGamepads, 500);
-    }
-  }
-  
   const { saveState } = context;
   const [topics, setTopics] = useState<readonly Topic[]>([]);
 
@@ -295,8 +311,8 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     });
   }, []);
 
-  const [renderDone, setRenderDone] = useState<() => void>(() => () => {});
-  
+  const [renderDone, setRenderDone] = useState<() => void>(() => () => { });
+
   const currentTopic_ = "/control/input"
 
   useLayoutEffect(() => {
@@ -310,14 +326,14 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     if (config.topic && !validateTopic(config.topic)) {
       console.log(ros2["sensor_msgs/Joy"]);
       console.log("DATATYPES:", messageDataTypes);
-      context.advertise?.(config.topic,  "truck_msgs/msg/RemoteControl", {messageDataTypes});
+      context.advertise?.(config.topic, "truck_msgs/msg/RemoteControl", { messageDataTypes });
     }
-      
-}, [context]);
+
+  }, [context]);
 
 
-  const movementDirections = () => [velocity >= 0 ? velocity : undefined, velocity <= 0 ? velocity : undefined, 
-                                    steering <= 0 ? steering : undefined, steering >= 0 ? steering : undefined];
+  const movementDirections = () => [velocity >= 0 ? velocity : undefined, velocity <= 0 ? velocity : undefined,
+  steering <= 0 ? steering : undefined, steering >= 0 ? steering : undefined];
   const checkButtonns = () => {
     if (!locked || !mode) {
       return;
@@ -332,7 +348,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     }
 
     const buttons = [upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed];
-    
+
     const movementFunctions = [setVelocity, setVelocity, setSteering, setSteering];
     const signs = [1, -1, -1, 1];
 
@@ -369,9 +385,9 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     };
   }, [velocity, steering, upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed]);
 
-  useEffect(() => {
-    connectGamePadControl()
-  }, [])
+  // useEffect(() => {
+  //   connectGamePadControl()
+  // }, [])
 
   useEffect(() => {
     if (!mode) {
@@ -389,9 +405,10 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     });
     saveState(config);
   }, [config, context, saveState, settingsActionHandler, topics]);
-  
+
 
   let publish = () => {
+    console.log("publish", mode);
     if (isUndefined(mode)) {
       return;
     }
@@ -399,23 +416,24 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     latestMsg.current.header.stamp.sec = Math.floor(date.getTime() / 1000);
     latestMsg.current.header.stamp.nsec = date.getMilliseconds() * 1e+6;
     if (mode == 0) {
-      latestMsg.current.rel_curvature = 0;
-      latestMsg.current.rel_velocity = 0;
+      latestMsg.current.curvature_ratio = 0;
+      latestMsg.current.velocity_ratio = 0;
       setMode(undefined);
     }
     if (currentTopic && !validateTopic(currentTopic)) {
+      console.log("publish!!!");
       context.publish?.(currentTopic_, latestMsg.current);
     }
   }
 
   const { topic: currentTopic } = config;
-  
+
   useLayoutEffect(() => {
     if (config.frequency <= 0) {
       return;
     }
     if (currentTopic && !validateTopic(currentTopic)) {
-      context.advertise?.(currentTopic,  "truck_msgs/msg/RemoteControl", {messageDataTypes});
+      context.advertise?.(currentTopic, "truck_msgs/msg/RemoteControl", { messageDataTypes });
       const intervalMs = (1000) / config.frequency;
       const intervalHandle = setInterval(() => {
         publish();
@@ -435,7 +453,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
 
 
   const buttonTheme = createTheme({
-    palette:{
+    palette: {
       background: {
         active: "#212121",
         disabled: "#666666",
@@ -470,40 +488,53 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
         </h2>
         <p>Dimensions: {dimensions.width}w {dimensions.height}h</p>
       </div>
-      <KeyboardControl/>
-      <div id="joystick-area" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px",
-                                       gridAutoRows: "minmax(50px, auto)"}}
-           ref={joystick_ref} onResize={()=>{console.log('!!!')}} onResizeCapture={()=>{console.log('!!!')}}>
-        <div id="left-stick" style={{gridRow: "2", gridColumn: "1"}}>
-          <div style={{width: "50%", margin: "auto"}}>
+      XXX: {mode}
+      <KeyboardControl
+        mode={mode}
+        setMode={setMode}
+        locked={locked}
+        setLocked={setLocked}
+        setUpArrowPressed={setUpArrowPressed}
+        setDownArrowPressed={setDownArrowPressed}
+        setLeftArrowPressed={setLeftArrowPressed}
+        setRightArrowPressed={setRightArrowPressed}
+        stopVehicle={stopVehicle}
+      />
+      <div id="joystick-area" style={{
+        display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px",
+        gridAutoRows: "minmax(50px, auto)"
+      }}
+        ref={joystick_ref} onResize={() => { console.log('!!!') }} onResizeCapture={() => { console.log('!!!') }}>
+        <div id="left-stick" style={{ gridRow: "2", gridColumn: "1" }}>
+          <div style={{ width: "50%", margin: "auto" }}>
             <Joystick controlPlaneShape={JoystickShape.AxisY}
-                      baseColor="rgba(0, 0, 0, 0.3)"
-                      stickColor="rgba(0, 0, 0, 0.7)"
-                      pos={{x: 0, y: velocity}}
-                      move={(event: IJoystickUpdateEvent)=> {
-                        if (event.y) {
-                          setVelocity(event.y)
-                        }
-                      }}
-                      size={dimensions.width * 0.2}
-                      stop={()=> setVelocity(0)}
-                      />
+              baseColor="rgba(0, 0, 0, 0.3)"
+              stickColor="rgba(0, 0, 0, 0.7)"
+              pos={{ x: 0, y: velocity }}
+              move={(event: IJoystickUpdateEvent) => {
+                if (event.y) {
+                  setVelocity(event.y)
+                }
+              }}
+              size={dimensions.width * 0.2}
+              stop={() => setVelocity(0)}
+            />
           </div>
         </div>
-        <div id="right-stick" style={{gridRow: "2", gridColumn: "2"}}>
-          <div style={{width: "50%", margin: "auto"}}>
+        <div id="right-stick" style={{ gridRow: "2", gridColumn: "2" }}>
+          <div style={{ width: "50%", margin: "auto" }}>
             <Joystick controlPlaneShape={JoystickShape.AxisX}
-                      baseColor="rgba(0, 0, 0, 0.3)"
-                      stickColor="rgba(0, 0, 0, 0.7)"
-                      pos={{x: steering, y: 0}}
-                      move={(event: IJoystickUpdateEvent)=> {
-                        if (event.x) {
-                          setSteering(event.x)
-                        }
-                      }}
-                      size={dimensions.width * 0.2}
-                      stop={()=> setSteering(0)}
-                      />
+              baseColor="rgba(0, 0, 0, 0.3)"
+              stickColor="rgba(0, 0, 0, 0.7)"
+              pos={{ x: steering, y: 0 }}
+              move={(event: IJoystickUpdateEvent) => {
+                if (event.x) {
+                  setSteering(event.x)
+                }
+              }}
+              size={dimensions.width * 0.2}
+              stop={() => setSteering(0)}
+            />
           </div>
         </div>
       </div>
