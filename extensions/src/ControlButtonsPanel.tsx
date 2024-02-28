@@ -1,6 +1,6 @@
 import { PanelExtensionContext, SettingsTreeAction, SettingsTreeNode, SettingsTreeNodes, Topic } from "@foxglove/studio"
 import { ros2humble as ros2 } from "@foxglove/rosmsg-msgs-common";
-import { createRef, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import FocusLock from "react-focus-lock";
 import _, { isUndefined } from "lodash";
@@ -16,6 +16,165 @@ import LooksTwoIcon from '@mui/icons-material/LooksTwo';
 import Looks3Icon from '@mui/icons-material/Looks3';
 
 import { IJoystickUpdateEvent } from "react-joystick-component/build/lib/Joystick";
+
+// EATS A LOT OF CPU
+function useRefDimensions(ref: React.RefObject<HTMLDivElement>, dimensionsFunctions: any) {
+  const {dimensions, setDimensions} = dimensionsFunctions
+
+  const savedDimensions = useMemo(
+    () => dimensions,
+    [dimensions]
+    )
+
+  useEffect(() => {
+    if (ref.current) {
+      const boundingRect = ref.current.getBoundingClientRect()
+      const { width, height } = boundingRect
+      setDimensions({ width: Math.round(width), height: Math.round(height) })
+    }
+  }, [ref])
+  return savedDimensions
+}
+
+function useInterval(callback: any, delay: any) {
+  const savedCallback = useRef<Function>();
+
+  useEffect(() => {
+    savedCallback.current = callback;
+  }, [callback]);
+ 
+  useEffect(() => {
+    function tick() {
+      savedCallback?.current?.call(savedCallback?.current);
+    }
+    if (delay !== null) {
+      let id = setInterval(tick, delay);
+      console.log('cleared', id)
+      return () => clearInterval(id);
+    }
+    return;
+  }, [delay]);
+}
+
+const connectGamePadControl = (movementFunctions: any) => {
+  const {setVelocity, setSteering, stopVehicle} = movementFunctions;
+
+  let haveEvents = 'GamepadEvent' in window;
+  let rAF = window.requestAnimationFrame;
+
+  const connectHandler = (event: GamepadEvent) => {
+    console.log("connected", event.gamepad)
+    addGamepad(event.gamepad);
+  }
+
+  const disconnectHandler = (event: GamepadEvent) => {
+    console.log("disconnected")
+    removeGamepad(event.gamepad);
+    stopVehicle()
+  }
+
+  const addGamepad = (gamepad: Gamepad) => {
+    controllers.set(gamepad.index, gamepad)
+    rAF(updateStatus);
+  }
+
+  const removeGamepad = (gamepad: Gamepad) => {
+    controllers.delete(gamepad.index)
+  }
+
+  const scanGamepads = () => {
+    let gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (let i = 0; i < gamepads.length; i++) {
+      if (gamepads[i]) {
+        return gamepads[i];
+      }
+    }
+    return null;
+  }
+
+  const updateStatus = () => {
+    let controller = scanGamepads();
+    const x = controller?.axes?.at(2)
+    const y = controller?.axes?.at(1)
+    if (y) {
+      setVelocity(-y)
+    }
+    if (x) {
+      setSteering(x)
+    }
+    let buttons = controller?.buttons
+    if (buttons) {
+      if (buttons[0]?.pressed) {
+        console.log("X pressed")
+      }
+      if (buttons[1]?.pressed) {
+        console.log("O pressed")
+      }
+      if (buttons[2]?.pressed) {
+        console.log("Square pressed")
+      }
+      if (buttons[3]?.pressed) {
+        console.log("Triangle pressed")
+      }
+    }
+    rAF(updateStatus);
+  }
+
+  if (haveEvents) {
+    window.addEventListener("gamepadconnected", connectHandler);
+    window.addEventListener("gamepaddisconnected", disconnectHandler);
+  } else {
+    setInterval(scanGamepads, 500);
+  }
+}
+
+const movementDirections = (velocity: number, steering: number) => [velocity >= 0 ? velocity : undefined, velocity <= 0 ? velocity : undefined,
+                                                                    steering <= 0 ? steering : undefined, steering >= 0 ? steering : undefined];
+
+function checkButtonns(panelData: any, buttonsData: any, movementFunctions: any) {
+  const {locked, mode, velocity, steering} = panelData;
+  const {upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed} = buttonsData;
+  const {setVelocity, setSteering, stopMovement, stopSteer} = movementFunctions;
+  const functionsArray = [setVelocity, setVelocity, setSteering, setSteering]
+  if (!locked || !mode) {
+    return;
+  }
+
+  const step = 0.05;
+  if ((upArrowPressed && downArrowPressed) || (upArrowPressed && velocity < 0) || (downArrowPressed && velocity > 0)) {
+    stopMovement();
+  }
+  if ((leftArrowPressed && rightArrowPressed) || (leftArrowPressed && steering > 0) || (rightArrowPressed && steering < 0)) {
+    stopSteer();
+  }
+
+  const buttons = [upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed];
+
+  const signs = [1, -1, -1, 1];
+
+  for (let i = 0; i < buttons.length; i++) {
+    let buttonPressed = buttons[i];
+    let movementFunction = functionsArray[i];
+    let sign = signs[i];
+    let direction = movementDirections(velocity, steering)[i];
+    if (isUndefined(direction) || isUndefined(buttonPressed) || isUndefined(movementFunction) || isUndefined(sign)) {
+      continue
+    }
+    if (!buttonPressed && direction == 0) {
+      continue;
+    }
+    direction = Math.abs(direction)
+    let value: number;
+    if (buttonPressed) {
+      value = direction + step < 1 ? direction + step : 1;
+    }
+    else {
+      value = direction - step > 0 ? direction - step : 0;
+    }
+    value = value == 0 ? value : sign * value
+    movementFunction(value);
+  }
+}
 
 type Config = {
   topic: undefined | string
@@ -52,6 +211,26 @@ function createMsg(frame_id: string, curvature: number, velocity: number, mode: 
     velocity_ratio: velocity
   };
 };
+
+function publish(context: any, currentTopic: any, msgRef: any, data: any, setMode: any) {
+  const {mode, velocity, steering} = data
+  if (isUndefined(mode)) {
+    return;
+  }
+  console.log("publish", mode, velocity, steering);
+  let date = new Date();
+  msgRef.current.header.stamp.sec = Math.floor(date.getTime() / 1000);
+  msgRef.current.header.stamp.nsec = date.getMilliseconds() * 1e+6;
+  if (mode == 0) {
+    msgRef.current.curvature_ratio = 0;
+    msgRef.current.velocity_ratio = 0;
+    setMode(() => undefined);
+  }
+  if (currentTopic && !validateTopic(currentTopic)) {
+    // console.log("publish!!!");
+    // context.publish?.(currentTopic, msgRef.current);
+  }
+}
 
 const messageDataTypes = new Map([
   ["std_msgs/Header", ros2["std_msgs/Header"]],
@@ -160,15 +339,16 @@ const KeyboardControl = (props: any) => {
         </span>
         <span style={{ marginLeft: "20px" }}>
           KOK
-          <span onClick={() => { setMode(0) }} style={{ marginRight: '20px' }}><SyncDisabledIcon sx={{ color: mode == 0 ? "red" : "disabled" }} fontSize="large" /></span>
-          <span onClick={() => { setMode(1) }}><LooksOneIcon sx={{ color: mode == 1 ? "green" : "disabled" }} fontSize="large" /></span>
-          <span onClick={() => { setMode(2) }}><LooksTwoIcon sx={{ color: mode == 2 ? "olive" : "disabled" }} fontSize="large" /></span>
-          <span onClick={() => { setMode(3) }}><Looks3Icon sx={{ color: mode == 3 ? "blue" : "disabled" }} fontSize="large" /></span>
+          <span onClick={() => { setMode(() => 0) }} style={{ marginRight: '20px' }}><SyncDisabledIcon sx={{ color: mode == 0 ? "red" : "disabled" }} fontSize="large" /></span>
+          <span onClick={() => { setMode(() => 1) }}><LooksOneIcon sx={{ color: mode == 1 ? "green" : "disabled" }} fontSize="large" /></span>
+          <span onClick={() => { setMode(() => 2) }}><LooksTwoIcon sx={{ color: mode == 2 ? "olive" : "disabled" }} fontSize="large" /></span>
+          <span onClick={() => { setMode(() => 3) }}><Looks3Icon sx={{ color: mode == 3 ? "blue" : "disabled" }} fontSize="large" /></span>
         </span>
       </p>
     </div>
   )
 }
+
 
 function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): JSX.Element {
   const frame_id = useRef<string>("base_link");
@@ -177,6 +357,8 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   const [velocity, _setVelocity] = useState<number>(0);
   const [steering, _setSteering] = useState<number>(0);
   const [mode, setMode] = useState<number | undefined>(undefined);
+  // const [dimensions, setDimensions] = useState({ width: 1, height: 2 })
+
   const latestMsg = useRef<Message>(createMsg(frame_id.current, steering, velocity, mode));
 
   const setVelocity = (value: number) => {
@@ -195,12 +377,11 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     _setSteering(Math.round(value * 100) / 100);
   }
 
-
-  const stopSteer = () => setSteering(0);
-  const stopMovement = () => setVelocity(0);
+  const stopSteer = () => _setSteering(0);
+  const stopMovement = () => _setVelocity(0);
   const stopVehicle = () => {
-    setVelocity(0);
-    setSteering(0);
+    _setVelocity(0);
+    _setSteering(0);
   }
 
   const [upArrowPressed, setUpArrowPressed] = useState<number>(0);
@@ -210,80 +391,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
 
   // const getPositionMessage = () => `{"rel_velocity": ${velocity}, "rel_curvature": ${steering}, "mode": 1}`;
 
-  const [locked, setLocked] = useState<boolean>(false);
-
-
-  // const connectGamePadControl = () => {
-
-  //   let haveEvents = 'GamepadEvent' in window;
-  //   let rAF = window.requestAnimationFrame;
-
-  //   const connectHandler = (event: GamepadEvent) => {
-  //     console.log("connected", event.gamepad)
-  //     addGamepad(event.gamepad);
-  //   }
-
-  //   const disconnectHandler = (event: GamepadEvent) => {
-  //     console.log("disconnected")
-  //     removeGamepad(event.gamepad);
-  //     stopVehicle()
-  //   }
-
-  //   const addGamepad = (gamepad: Gamepad) => {
-  //     controllers.set(gamepad.index, gamepad)
-  //     rAF(updateStatus);
-  //   }
-
-
-  //   const removeGamepad = (gamepad: Gamepad) => {
-  //     controllers.delete(gamepad.index)
-  //   }
-
-  //   const scanGamepads = () => {
-  //     let gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-  //     for (let i = 0; i < gamepads.length; i++) {
-  //       if (gamepads[i]) {
-  //         return gamepads[i];
-  //       }
-  //     }
-  //     return null;
-  //   }
-
-  //   const updateStatus = () => {
-  //     let controller = scanGamepads();
-  //     const x = controller?.axes?.at(2)
-  //     const y = controller?.axes?.at(1)
-  //     if (y) {
-  //       setVelocity(-y)
-  //     }
-  //     if (x) {
-  //       setSteering(x)
-  //     }
-  //     let buttons = controller?.buttons
-  //     if (buttons) {
-  //       if (buttons[0]?.pressed) {
-  //         console.log("X pressed")
-  //       }
-  //       if (buttons[1]?.pressed) {
-  //         console.log("O pressed")
-  //       }
-  //       if (buttons[2]?.pressed) {
-  //         console.log("Square pressed")
-  //       }
-  //       if (buttons[3]?.pressed) {
-  //         console.log("Triangle pressed")
-  //       }
-  //     }
-  //     rAF(updateStatus);
-  //   }
-
-  //   if (haveEvents) {
-  //     window.addEventListener("gamepadconnected", connectHandler);
-  //     window.addEventListener("gamepaddisconnected", disconnectHandler);
-  //   } else {
-  //     setInterval(scanGamepads, 500);
-  //   }
-  // }
+  const [locked, setLocked] = useState<boolean>(true);
 
   const { saveState } = context;
   const [topics, setTopics] = useState<readonly Topic[]>([]);
@@ -311,9 +419,16 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     });
   }, []);
 
-  const [renderDone, setRenderDone] = useState<() => void>(() => () => { });
+  useEffect(() => {
+    const tree = buildSettingsTree(config, topics);
+    context.updatePanelSettingsEditor({
+      actionHandler: settingsActionHandler,
+      nodes: tree,
+    });
+    saveState(config);
+  }, [config, context, saveState, settingsActionHandler, topics]);
 
-  const currentTopic_ = "/control/input"
+  const [renderDone, setRenderDone] = useState<() => void>(() => () => { });
 
   useLayoutEffect(() => {
     context.onRender = (renderState, done) => {
@@ -331,121 +446,53 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
 
   }, [context]);
 
-
-  const movementDirections = () => [velocity >= 0 ? velocity : undefined, velocity <= 0 ? velocity : undefined,
-  steering <= 0 ? steering : undefined, steering >= 0 ? steering : undefined];
-  const checkButtonns = () => {
-    if (!locked || !mode) {
-      return;
-    }
-
-    const step = 0.05;
-    if ((upArrowPressed && downArrowPressed) || (upArrowPressed && velocity < 0) || (downArrowPressed && velocity > 0)) {
-      stopMovement();
-    }
-    if ((leftArrowPressed && rightArrowPressed) || (leftArrowPressed && steering > 0) || (rightArrowPressed && steering < 0)) {
-      stopSteer();
-    }
-
-    const buttons = [upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed];
-
-    const movementFunctions = [setVelocity, setVelocity, setSteering, setSteering];
-    const signs = [1, -1, -1, 1];
-
-    for (let i = 0; i < buttons.length; i++) {
-      let buttonPressed = buttons[i];
-      let movementFunction = movementFunctions[i];
-      let sign = signs[i];
-      let direction = movementDirections()[i];
-      if (isUndefined(direction) || isUndefined(buttonPressed) || isUndefined(movementFunction) || isUndefined(sign)) {
-        continue
+  const { topic: currentTopic } = config;
+  useEffect(
+    () => {
+      if (!currentTopic) {
+        return
       }
-      if (!buttonPressed && direction == 0) {
-        continue;
-      }
-      direction = Math.abs(direction)
-      let value: number;
-      if (buttonPressed) {
-        value = direction + step < 1 ? direction + step : 1;
-      }
-      else {
-        value = direction - step > 0 ? direction - step : 0;
-      }
-      value = value == 0 ? value : sign * value
-      movementFunction(value);
-    }
-  }
-
-  useLayoutEffect(() => {
-    const intervalHandle = setInterval(() => {
-      checkButtonns()
-    }, 1);
-    return () => {
-      clearInterval(intervalHandle)
-    };
-  }, [velocity, steering, upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed]);
-
-  // useEffect(() => {
-  //   connectGamePadControl()
-  // }, [])
+      
+      context.advertise?.(currentTopic, "truck_msgs/msg/RemoteControl", { messageDataTypes });
+      return(
+        () => {context.unadvertise?.(currentTopic);}
+      )
+    },
+    [currentTopic]
+  )
 
   useEffect(() => {
+    connectGamePadControl({setVelocity, setSteering, stopVehicle})
+  }, [])
+
+  useInterval(
+    () => {
+      checkButtonns({locked, mode, velocity, steering},
+                    {upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed},
+                    {setVelocity, setSteering, stopMovement, stopSteer})
+    },
+    1
+  )
+  
+  useEffect(() => {
     if (!mode) {
-      setSteering(0);
-      setVelocity(0);
+      _setSteering(0);
+      _setVelocity(0);
     }
     latestMsg.current = createMsg(frame_id.current, steering, velocity, mode)
   }, [velocity, steering, mode])
-
-  useEffect(() => {
-    const tree = buildSettingsTree(config, topics);
-    context.updatePanelSettingsEditor({
-      actionHandler: settingsActionHandler,
-      nodes: tree,
-    });
-    saveState(config);
-  }, [config, context, saveState, settingsActionHandler, topics]);
-
-
-  let publish = () => {
-    console.log("publish", mode);
-    if (isUndefined(mode)) {
-      return;
-    }
-    let date = new Date();
-    latestMsg.current.header.stamp.sec = Math.floor(date.getTime() / 1000);
-    latestMsg.current.header.stamp.nsec = date.getMilliseconds() * 1e+6;
-    if (mode == 0) {
-      latestMsg.current.curvature_ratio = 0;
-      latestMsg.current.velocity_ratio = 0;
-      setMode(undefined);
-    }
-    if (currentTopic && !validateTopic(currentTopic)) {
-      console.log("publish!!!");
-      context.publish?.(currentTopic_, latestMsg.current);
-    }
-  }
-
-  const { topic: currentTopic } = config;
-
-  useLayoutEffect(() => {
-    if (config.frequency <= 0) {
-      return;
-    }
-    if (currentTopic && !validateTopic(currentTopic)) {
-      context.advertise?.(currentTopic, "truck_msgs/msg/RemoteControl", { messageDataTypes });
-      const intervalMs = (1000) / config.frequency;
-      const intervalHandle = setInterval(() => {
-        publish();
-      }, intervalMs);
-      return () => {
-        clearInterval(intervalHandle);
-        context.unadvertise?.(currentTopic);
-        console.log("unadvertised", currentTopic)
-      };
-    }
-    return;
-  }, [context, config, currentTopic]);
+  
+  useInterval(
+    () => {
+      if (config.frequency <= 0) {
+        return;
+      }
+      if (currentTopic && !validateTopic(currentTopic)) {
+        publish(context, currentTopic, latestMsg, {mode, velocity, steering}, setMode);
+      }
+    },
+    (1000) / config.frequency
+  )
 
   useLayoutEffect(() => {
     renderDone();
@@ -466,19 +513,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     }
   })
 
-  const useRefDimensions = (ref: React.RefObject<HTMLDivElement>) => {
-    const [dimensions, setDimensions] = useState({ width: 1, height: 2 })
-    useEffect(() => {
-      if (ref.current) {
-        const boundingRect = ref.current.getBoundingClientRect()
-        const { width, height } = boundingRect
-        setDimensions({ width: Math.round(width), height: Math.round(height) })
-      }
-    }, [ref])
-    return dimensions
-  }
-
-  const dimensions = useRefDimensions(joystick_ref);
+  // const dimensionsHook = useRefDimensions(joystick_ref, {dimensions, setDimensions});
 
   return (
     <ThemeProvider theme={buttonTheme}>
@@ -486,7 +521,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
         <h2 style={{ textAlign: "center" }}>
           velocity: {velocity}, steering: {steering}, mode: {isUndefined(mode) ? 'not enabled' : mode}
         </h2>
-        <p>Dimensions: {dimensions.width}w {dimensions.height}h</p>
+        {/* <p>Dimensions: {dimensions.width}w {dimensions.height}h</p> */}
       </div>
       XXX: {mode}
       <KeyboardControl
@@ -501,10 +536,10 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
         stopVehicle={stopVehicle}
       />
       <div id="joystick-area" style={{
-        display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px",
-        gridAutoRows: "minmax(50px, auto)"
-      }}
-        ref={joystick_ref} onResize={() => { console.log('!!!') }} onResizeCapture={() => { console.log('!!!') }}>
+          display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px",
+          gridAutoRows: "minmax(50px, auto)"
+        }}
+        ref={joystick_ref}>
         <div id="left-stick" style={{ gridRow: "2", gridColumn: "1" }}>
           <div style={{ width: "50%", margin: "auto" }}>
             <Joystick controlPlaneShape={JoystickShape.AxisY}
@@ -516,7 +551,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
                   setVelocity(event.y)
                 }
               }}
-              size={dimensions.width * 0.2}
+              // size={dimensions.width * 0.2}
               stop={() => setVelocity(0)}
             />
           </div>
@@ -532,7 +567,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
                   setSteering(event.x)
                 }
               }}
-              size={dimensions.width * 0.2}
+              // size={dimensions.width * 0.2}
               stop={() => setSteering(0)}
             />
           </div>
