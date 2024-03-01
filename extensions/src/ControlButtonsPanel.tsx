@@ -227,8 +227,8 @@ function publish(context: any, currentTopic: any, msgRef: any, data: any, setMod
     setMode(() => undefined);
   }
   if (currentTopic && !validateTopic(currentTopic)) {
-    // console.log("publish!!!");
-    // context.publish?.(currentTopic, msgRef.current);
+    // context.advertise?.(currentTopic, "truck_msgs/msg/RemoteControl", { datatypes: messageDataTypes });
+    context.publish?.(currentTopic, msgRef.current);
   }
 }
 
@@ -338,7 +338,6 @@ const KeyboardControl = (props: any) => {
           {/* {locked ? <FocusLock as="span"><LockControl/></FocusLock> : <LockControl/>} */}
         </span>
         <span style={{ marginLeft: "20px" }}>
-          KOK
           <span onClick={() => { setMode(() => 0) }} style={{ marginRight: '20px' }}><SyncDisabledIcon sx={{ color: mode == 0 ? "red" : "disabled" }} fontSize="large" /></span>
           <span onClick={() => { setMode(() => 1) }}><LooksOneIcon sx={{ color: mode == 1 ? "green" : "disabled" }} fontSize="large" /></span>
           <span onClick={() => { setMode(() => 2) }}><LooksTwoIcon sx={{ color: mode == 2 ? "olive" : "disabled" }} fontSize="large" /></span>
@@ -439,9 +438,9 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     context.watch("topics");
 
     if (config.topic && !validateTopic(config.topic)) {
-      console.log(ros2["sensor_msgs/Joy"]);
-      console.log("DATATYPES:", messageDataTypes);
-      context.advertise?.(config.topic, "truck_msgs/msg/RemoteControl", { messageDataTypes });
+      // console.log(ros2["sensor_msgs/Joy"]);
+      // console.log("DATATYPES:", messageDataTypes);
+      // context.advertise?.(config.topic, "truck_msgs/msg/RemoteControl", { messageDataTypes });
     }
 
   }, [context]);
@@ -453,10 +452,8 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
         return
       }
       
-      context.advertise?.(currentTopic, "truck_msgs/msg/RemoteControl", { messageDataTypes });
-      return(
-        () => {context.unadvertise?.(currentTopic);}
-      )
+      console.log("Advertise")
+      context.advertise?.(currentTopic, "truck_msgs/msg/RemoteControl", { datatypes: messageDataTypes });
     },
     [currentTopic]
   )
@@ -523,7 +520,6 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
         </h2>
         {/* <p>Dimensions: {dimensions.width}w {dimensions.height}h</p> */}
       </div>
-      XXX: {mode}
       <KeyboardControl
         mode={mode}
         setMode={setMode}
