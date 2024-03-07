@@ -58,3 +58,26 @@
     align-items: center;
     height: 100%;
 }
+
+.blinking-indicator {
+    animation: blink-animation 1.5s infinite;
+}
+
+@keyframes blink-animation {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 1;
+    }
+}
+
+.text-unselectable {
+    -moz-user-select: none;
+    -khtml-user-select: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
