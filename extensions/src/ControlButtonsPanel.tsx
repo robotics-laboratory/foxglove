@@ -2,10 +2,13 @@ import { PanelExtensionContext, SettingsTreeAction, SettingsTreeNode, SettingsTr
 import { ros2humble as ros2 } from "@foxglove/rosmsg-msgs-common";
 import { createRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom";
-import FocusLock from "react-focus-lock";
-import _, { isUndefined } from "lodash";
+import _ from "lodash";
 
 import { Joystick, JoystickShape } from "react-joystick-component"
+import { IJoystickUpdateEvent } from "react-joystick-component/build/lib/Joystick";
+
+import { useResizeDetector } from "react-resize-detector";
+import { useInterval } from 'usehooks-ts'
 
 import { createTheme, ThemeProvider } from "@mui/system";
 import LockOpenTwoToneIcon from "@mui/icons-material/LockOpenTwoTone";
@@ -15,53 +18,15 @@ import LooksOneIcon from '@mui/icons-material/LooksOne';
 import LooksTwoIcon from '@mui/icons-material/LooksTwo';
 import Looks3Icon from '@mui/icons-material/Looks3';
 
-import { IJoystickUpdateEvent } from "react-joystick-component/build/lib/Joystick";
 
-// EATS A LOT OF CPU
-function useRefDimensions(ref: React.RefObject<HTMLDivElement>, dimensionsFunctions: any) {
-  const {dimensions, setDimensions} = dimensionsFunctions
+const getSign = (value: number) => value > 0 ? "+" : ""
 
-  const savedDimensions = useMemo(
-    () => dimensions,
-    [dimensions]
-    )
-
-  useEffect(() => {
-    if (ref.current) {
-      const boundingRect = ref.current.getBoundingClientRect()
-      const { width, height } = boundingRect
-      setDimensions({ width: Math.round(width), height: Math.round(height) })
-    }
-  }, [ref])
-  return savedDimensions
-}
-
-function useInterval(callback: any, delay: any) {
-  const savedCallback = useRef<Function>();
-
-  useEffect(() => {
-    savedCallback.current = callback;
-  }, [callback]);
- 
-  useEffect(() => {
-    function tick() {
-      savedCallback?.current?.call(savedCallback?.current);
-    }
-    if (delay !== null) {
-      let id = setInterval(tick, delay);
-      console.log('cleared', id)
-      return () => clearInterval(id);
-    }
-    return;
-  }, [delay]);
-}
-
-const connectGamePadControl = (movementFunctions: any) => {
+const connectGamePadControl = (movementFunctions: any, setMode: any, getDeadZone: any) => {
   const {setVelocity, setSteering, stopVehicle} = movementFunctions;
 
   let haveEvents = 'GamepadEvent' in window;
   let rAF = window.requestAnimationFrame;
-
+  
   const connectHandler = (event: GamepadEvent) => {
     console.log("connected", event.gamepad)
     addGamepad(event.gamepad);
@@ -97,23 +62,27 @@ const connectGamePadControl = (movementFunctions: any) => {
     const x = controller?.axes?.at(2)
     const y = controller?.axes?.at(1)
     if (y) {
-      setVelocity(-y)
+      setVelocity(Math.abs(y) > getDeadZone() ? -y : 0 )
     }
     if (x) {
-      setSteering(x)
+      setSteering(Math.abs(x) > getDeadZone() ? -x : 0)
     }
+    console.log(getDeadZone())
     let buttons = controller?.buttons
     if (buttons) {
-      if (buttons[0]?.pressed) {
-        console.log("X pressed")
+      if (buttons[0]?.value == 1) {
+        // console.log("X pressed")
+        setMode(1)
       }
-      if (buttons[1]?.pressed) {
-        console.log("O pressed")
+      if (buttons[1]?.value == 1) {
+        // console.log("Circle pressed")
+        setMode(2)
       }
-      if (buttons[2]?.pressed) {
-        console.log("Square pressed")
+      if (buttons[2]?.value == 1) {
+        // console.log("Square pressed")
+        setMode(0)
       }
-      if (buttons[3]?.pressed) {
+      if (buttons[3]?.value == 1) {
         console.log("Triangle pressed")
       }
     }
@@ -129,56 +98,56 @@ const connectGamePadControl = (movementFunctions: any) => {
 }
 
 const movementDirections = (velocity: number, steering: number) => [velocity >= 0 ? velocity : undefined, velocity <= 0 ? velocity : undefined,
-                                                                    steering <= 0 ? steering : undefined, steering >= 0 ? steering : undefined];
+                                                                    steering >= 0 ? steering : undefined, steering <= 0 ? steering : undefined];
 
 function checkButtonns(panelData: any, buttonsData: any, movementFunctions: any) {
-  const {locked, mode, velocity, steering} = panelData;
+  const {isKeyboardEnabled, mode, velocity, steering} = panelData;
   const {upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed} = buttonsData;
   const {setVelocity, setSteering, stopMovement, stopSteer} = movementFunctions;
   const functionsArray = [setVelocity, setVelocity, setSteering, setSteering]
-  if (!locked || !mode) {
-    return;
-  }
-
-  const step = 0.05;
-  if ((upArrowPressed && downArrowPressed) || (upArrowPressed && velocity < 0) || (downArrowPressed && velocity > 0)) {
-    stopMovement();
-  }
-  if ((leftArrowPressed && rightArrowPressed) || (leftArrowPressed && steering > 0) || (rightArrowPressed && steering < 0)) {
-    stopSteer();
-  }
-
-  const buttons = [upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed];
-
-  const signs = [1, -1, -1, 1];
-
-  for (let i = 0; i < buttons.length; i++) {
-    let buttonPressed = buttons[i];
-    let movementFunction = functionsArray[i];
-    let sign = signs[i];
-    let direction = movementDirections(velocity, steering)[i];
-    if (isUndefined(direction) || isUndefined(buttonPressed) || isUndefined(movementFunction) || isUndefined(sign)) {
-      continue
+  if (isKeyboardEnabled() && mode) {
+    const step = 0.05;
+    if ((upArrowPressed && downArrowPressed) || (upArrowPressed && velocity < 0) || (downArrowPressed && velocity > 0)) {
+      stopMovement();
     }
-    if (!buttonPressed && direction == 0) {
-      continue;
+    if ((leftArrowPressed && rightArrowPressed) || (leftArrowPressed && steering < 0) || (rightArrowPressed && steering > 0)) {
+      stopSteer();
     }
-    direction = Math.abs(direction)
-    let value: number;
-    if (buttonPressed) {
-      value = direction + step < 1 ? direction + step : 1;
+  
+    const buttons = [upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed];
+  
+    const signs = [1, -1, 1, -1];
+  
+    for (let i = 0; i < buttons.length; i++) {
+      let buttonPressed = buttons[i];
+      let movementFunction = functionsArray[i];
+      let sign = signs[i]!;
+      let direction = movementDirections(velocity, steering)[i];
+      if (direction == undefined || buttonPressed == undefined || movementFunction == undefined || sign == undefined) {
+        continue
+      }
+      if (!buttonPressed && direction == 0) {
+        continue;
+      }
+      direction = Math.abs(direction!)
+      let value: number;
+      if (buttonPressed) {
+        value = direction + step < 1 ? direction + step : 1;
+      }
+      else {
+        value = direction - step > 0 ? direction - step : 0;
+      }
+      value = value == 0 ? value : sign * value
+      movementFunction(value);
     }
-    else {
-      value = direction - step > 0 ? direction - step : 0;
-    }
-    value = value == 0 ? value : sign * value
-    movementFunction(value);
   }
 }
 
 type Config = {
   topic: undefined | string
   frequency: number
+  gamepadDeadZone: number
+  controlMode: number
 }
 
 type Message = {
@@ -196,8 +165,8 @@ type Message = {
 };
 
 
-function createMsg(frame_id: string, curvature: number, velocity: number, mode: number | undefined): Message {
-  let date = new Date();
+function createMsg(frame_id: string, curvature: number, velocity: number, mode: number | undefined, offset: number): Message {
+  let date = new Date(Date.now() - (offset * 1000));
   return {
     header: {
       frame_id: frame_id,
@@ -212,19 +181,14 @@ function createMsg(frame_id: string, curvature: number, velocity: number, mode: 
   };
 };
 
-function publish(context: any, currentTopic: any, msgRef: any, data: any, setMode: any) {
-  const {mode, velocity, steering} = data
-  if (isUndefined(mode)) {
-    return;
-  }
-  console.log("publish", mode, velocity, steering);
-  let date = new Date();
+function publish(context: any, currentTopic: any, msgRef: any, data: any) {
+  const {mode, offset, velocity, steering} = data
+  let date = new Date(Date.now() - (offset * 1000));
   msgRef.current.header.stamp.sec = Math.floor(date.getTime() / 1000);
   msgRef.current.header.stamp.nsec = date.getMilliseconds() * 1e+6;
   if (mode == 0) {
     msgRef.current.curvature_ratio = 0;
     msgRef.current.velocity_ratio = 0;
-    setMode(() => undefined);
   }
   if (currentTopic && !validateTopic(currentTopic)) {
     // context.advertise?.(currentTopic, "truck_msgs/msg/RemoteControl", { datatypes: messageDataTypes });
@@ -261,7 +225,31 @@ function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTr
   const general: SettingsTreeNode = {
     label: "General",
     fields: {
-      frequency: { label: "Frequency", input: "number", value: config.frequency },
+      controlMode: { 
+        label: "Control mode",
+        input: "select",
+        value: config.controlMode,
+        options: [
+          {label: "Keyboard", value: 0, disabled: false},
+          {label: "Joystick", value: 1, disabled: true},
+          {label: "Gamepad", value: 2, disabled: true}
+        ] 
+      },
+      frequency: { 
+        label: "Frequency",
+        input: "number", 
+        value: config.frequency, 
+        min: 1, 
+        max: 60
+      },
+      gamepadDeadZone: {
+        label: "Gamepad dead zone",
+        input: "number", 
+        value: config.gamepadDeadZone, 
+        min: 0, 
+        max: 1, 
+        step: 0.05 
+      },
       topic: {
         label: "Topic",
         input: "autocomplete",
@@ -277,89 +265,109 @@ function buildSettingsTree(config: Config, topics: readonly Topic[]): SettingsTr
 
 let controllers = new Map<number, Gamepad>();
 
-
 const KeyboardControl = (props: any) => {
-  // FIXME
+
   const {
-    mode,
-    setMode,
-    locked, setLocked,
+    isKeyboardEnabled,
     setUpArrowPressed,
     setDownArrowPressed,
     setLeftArrowPressed,
     setRightArrowPressed,
-    stopVehicle,
+    setMode
   } = props;
 
-  const checkPressed = (eventCode: string, value: number) => {
-    switch (eventCode) {
-      case "ArrowUp":
-        setUpArrowPressed(value)
-        return;
-      case "ArrowDown":
-        setDownArrowPressed(value)
-        return;
-      case "ArrowLeft":
-        setLeftArrowPressed(value)
-        return;
-      case "ArrowRight":
-        setRightArrowPressed(value)
-        return;
-      default:
-        return;
+  const checkPressed = (event: KeyboardEvent, value: number) => {
+    let eventCode = event.code
+    if (eventCode == "ArrowUp" || eventCode == "KeyW") {
+      setUpArrowPressed(value)
+    }
+    else if (eventCode == "ArrowDown" || eventCode == "KeyS") {
+      setDownArrowPressed(value)
+    }
+    else if (eventCode == "ArrowLeft" || eventCode == "KeyA") {
+      setLeftArrowPressed(value)
+    }
+    else if (eventCode == "ArrowRight" || eventCode == "KeyD") {
+      setRightArrowPressed(value)
+    }
+
+    if (event.shiftKey && event.code == "Digit1") {
+      setMode(0)
+    } else if (event.shiftKey && event.code == "Digit2") {
+      setMode(1)
+    } else if (event.shiftKey && event.code == "Digit3") {
+      setMode(2)
     }
   }
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    checkPressed(event.code, 1);
+
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (!isKeyboardEnabled()) {
+      return
+    }
+    checkPressed(event, 1);
+  }
+  const handleKeyUp = (event: KeyboardEvent) => {
+    if (!isKeyboardEnabled()) {
+      return
+    }
+    checkPressed(event, 0);
   }
 
-  const handleKeyUp = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    checkPressed(event.code, 0);
-  }
+  // adds & removes keyboard event listeners
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown)
+    window.addEventListener("keyup", handleKeyUp)
+    return(()=> {
+      window.removeEventListener("keydown", handleKeyDown)
+      window.removeEventListener("keyup", handleKeyUp)
+    })
+  }, [isKeyboardEnabled])
 
-  const changeLockedState = () => {
-    setLocked(!locked)
-  }
+  return (<></>)
+}
 
-  const LockControl = () => {
+const ModesSwitcher = (props: any) => {
+  const {
+    mode,
+    truckMode,
+    setMode
+  } = props;
+
+  const ModeButton = (props: any) => {
+    const {label, modeValue, panelMode, truckMode, setMode, } = props
+    const colors = ["0, 140, 255 ", "0, 128, 0", "128, 128, 0"]
     return (
-      <span tabIndex={0} onKeyDown={handleKeyDown} onKeyUp={handleKeyUp} onBlur={stopVehicle}>
-        <span onClick={changeLockedState}>
-          {locked ? <LockTwoToneIcon fontSize="large" /> : <LockOpenTwoToneIcon fontSize="large" />}
-        </span>
-      </span>
+      <button style={{ borderRadius: "10px", position: "relative", height: "2.5rem", width: "100%",
+                    border: "solid 2px black", cursor: "pointer",
+                    backgroundColor: panelMode == modeValue ? `rgba(${colors[mode]}, ${truckMode == panelMode ? 1 : 0.5})` : "none" }}
+           onClick={()=>{setMode(modeValue)}}>
+        
+        <p className={truckMode == modeValue && truckMode != panelMode ? "blinking-indicator": "none"}
+           style={{ position: "absolute", left: "0.2rem", top: "-0.6rem", height: "0.7rem",
+                    aspectRatio: "1 / 1", borderRadius: "50%",
+                    backgroundColor: truckMode != modeValue ? "grey" : truckMode == panelMode ? "red" : "rgba(255, 0, 0, 0.6)" }}></p>
+        <p className="text-unselectable" style={{ verticalAlign: "middle" }}>{ label }</p>
+      </button>
     )
   }
 
   return (
-    <div>
-      <p style={{ background: "gradient", textAlign: "center" }}>
-        <span>
-          {/* {locked ? <FocusLock as="span"><LockControl/></FocusLock> : <LockControl/>} */}
-        </span>
-        <span style={{ marginLeft: "20px" }}>
-          <span onClick={() => { setMode(() => 0) }} style={{ marginRight: '20px' }}><SyncDisabledIcon sx={{ color: mode == 0 ? "red" : "disabled" }} fontSize="large" /></span>
-          <span onClick={() => { setMode(() => 1) }}><LooksOneIcon sx={{ color: mode == 1 ? "green" : "disabled" }} fontSize="large" /></span>
-          <span onClick={() => { setMode(() => 2) }}><LooksTwoIcon sx={{ color: mode == 2 ? "olive" : "disabled" }} fontSize="large" /></span>
-          <span onClick={() => { setMode(() => 3) }}><Looks3Icon sx={{ color: mode == 3 ? "blue" : "disabled" }} fontSize="large" /></span>
-        </span>
-      </p>
+    <div style={{ display: "flex", flexDirection: "row", gap: "10px",
+                  margin: "auto", paddingTop: "3rem", width: "50%", 
+                  justifyContent: "center", textAlign: "center" }}>
+      <ModeButton label="OFF" modeValue={0} panelMode={mode} truckMode={truckMode} setMode={setMode} />
+      <ModeButton label="REMOTE" modeValue={1} panelMode={mode} truckMode={truckMode} setMode={setMode} />
+      <ModeButton label="AUTO" modeValue={2} panelMode={mode} truckMode={truckMode} setMode={setMode} />
     </div>
   )
 }
 
 
 function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): JSX.Element {
+  
   const frame_id = useRef<string>("base_link");
-  const joystick_ref = createRef<HTMLDivElement>();
-
+  
   const [velocity, _setVelocity] = useState<number>(0);
-  const [steering, _setSteering] = useState<number>(0);
-  const [mode, setMode] = useState<number | undefined>(undefined);
-  // const [dimensions, setDimensions] = useState({ width: 1, height: 2 })
-
-  const latestMsg = useRef<Message>(createMsg(frame_id.current, steering, velocity, mode));
-
   const setVelocity = (value: number) => {
     if ((velocity > 0 && value < 0) || (velocity < 0 && value > 0)) {
       _setVelocity(0);
@@ -368,6 +376,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     _setVelocity(Math.round(value * 100) / 100);
   }
 
+  const [steering, _setSteering] = useState<number>(0);
   const setSteering = (value: number) => {
     if ((steering > 0 && value < 0) || (steering < 0 && value > 0)) {
       _setSteering(0);
@@ -375,12 +384,25 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     }
     _setSteering(Math.round(value * 100) / 100);
   }
-
+  
+  const [mode, _setMode] = useState<number>(0);
+  const setMode = (newMode: number) => {
+    _setMode(() => newMode)
+    if (newMode == 0) {
+      publish(context, currentTopic, latestMsg, {mode: 0, offset, velocity, steering});
+    }
+  }
+  const [truckMode, setTruckMode] = useState<number>(0)
+  
+  const [offset, setOffset] = useState<number>(0)
+  const latestMsg = useRef<Message>(createMsg(frame_id.current, steering, velocity, mode, offset));
+  
   const stopSteer = () => _setSteering(0);
   const stopMovement = () => _setVelocity(0);
   const stopVehicle = () => {
     _setVelocity(0);
     _setSteering(0);
+    setMode(0);
   }
 
   const [upArrowPressed, setUpArrowPressed] = useState<number>(0);
@@ -388,25 +410,30 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   const [leftArrowPressed, setLeftArrowPressed] = useState<number>(0);
   const [rightArrowPressed, setRightArrowPressed] = useState<number>(0);
 
-  // const getPositionMessage = () => `{"rel_velocity": ${velocity}, "rel_curvature": ${steering}, "mode": 1}`;
+  const [squareButtonPressed, setSquareButtonPressed] = useState<boolean>(false);
+  const [xButtonPressed, setXButtonPressed] = useState<boolean>(false);
+  const [circleButtonPressed, setCircleButtonPressed] = useState<boolean>(false);
 
-  const [locked, setLocked] = useState<boolean>(true);
-
-  const { saveState } = context;
   const [topics, setTopics] = useState<readonly Topic[]>([]);
-
+  
   const [config, setConfig] = useState<Config>(() => {
     const partialConfig = context.initialState as Partial<Config>;
     const {
       topic,
       frequency = 60,
+      gamepadDeadZone = 0,
+      controlMode = 0
     } = partialConfig;
     return {
       topic,
       frequency,
+      gamepadDeadZone,
+      controlMode
     };
   });
 
+  const [renderDone, setRenderDone] = useState<() => void>(() => () => { });
+  
   const settingsActionHandler = useCallback((action: SettingsTreeAction) => {
     if (action.action !== "update") {
       return;
@@ -418,6 +445,22 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     });
   }, []);
 
+  const { saveState } = context;
+  const { topic: currentTopic, controlMode: controlMode, gamepadDeadZone: deadZone } = config;
+
+  const isKeyboardEnabled = () => controlMode == 0
+  const isJoystickEnabled = () => controlMode == 1
+  const isGamepadEnabled = () => controlMode == 2
+
+  // adds onBlur events
+  useEffect(() => {
+    window.addEventListener("blur", stopVehicle)
+    return (() => {
+      window.removeEventListener("blur", stopVehicle)
+    })
+  })
+
+  // updates setting trees
   useEffect(() => {
     const tree = buildSettingsTree(config, topics);
     context.updatePanelSettingsEditor({
@@ -427,65 +470,65 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     saveState(config);
   }, [config, context, saveState, settingsActionHandler, topics]);
 
-  const [renderDone, setRenderDone] = useState<() => void>(() => () => { });
-
+  // subscribes to topic from ROS to synchronize time
   useLayoutEffect(() => {
     context.onRender = (renderState, done) => {
+      // console.log(renderState.currentFrame);
+      if (renderState.currentFrame) {
+        const { receiveTime, message } = (renderState.currentFrame.slice(-1).pop()) as any
+        setOffset(receiveTime.sec - message.header.stamp.sec + ((receiveTime.nsec - message.header.stamp.nsec) / 1e9))
+        setTruckMode(message.mode)
+      }
       setTopics(renderState.topics ?? []);
       setRenderDone(() => done);
     };
 
     context.watch("topics");
-
-    if (config.topic && !validateTopic(config.topic)) {
-      // console.log(ros2["sensor_msgs/Joy"]);
-      // console.log("DATATYPES:", messageDataTypes);
-      // context.advertise?.(config.topic, "truck_msgs/msg/RemoteControl", { messageDataTypes });
-    }
+    context.watch("currentFrame");
+    context.subscribe([{topic: "/control/mode"}]);
+    
 
   }, [context]);
-
-  const { topic: currentTopic } = config;
+  
+  // advertises to a new topic
   useEffect(
     () => {
       if (!currentTopic) {
         return
       }
-      
-      console.log("Advertise")
       context.advertise?.(currentTopic, "truck_msgs/msg/RemoteControl", { datatypes: messageDataTypes });
     },
     [currentTopic]
   )
-
+  
+  // starts listening to a gamepad
   useEffect(() => {
-    connectGamePadControl({setVelocity, setSteering, stopVehicle})
+    connectGamePadControl({setVelocity, setSteering, stopVehicle}, setMode, () => deadZone)
   }, [])
 
+  // checks keyboard buttons
   useInterval(
     () => {
-      checkButtonns({locked, mode, velocity, steering},
+      checkButtonns({isKeyboardEnabled, mode, velocity, steering},
                     {upArrowPressed, downArrowPressed, leftArrowPressed, rightArrowPressed},
                     {setVelocity, setSteering, stopMovement, stopSteer})
     },
     1
   )
-  
+
+  // updates message data
   useEffect(() => {
-    if (!mode) {
-      _setSteering(0);
-      _setVelocity(0);
-    }
-    latestMsg.current = createMsg(frame_id.current, steering, velocity, mode)
+    latestMsg.current = createMsg(frame_id.current, steering, velocity, mode, offset)
   }, [velocity, steering, mode])
   
+  // publishes messages with particular frequency
   useInterval(
     () => {
       if (config.frequency <= 0) {
         return;
       }
-      if (currentTopic && !validateTopic(currentTopic)) {
-        publish(context, currentTopic, latestMsg, {mode, velocity, steering}, setMode);
+      if (currentTopic && !validateTopic(currentTopic) && mode) {
+        publish(context, currentTopic, latestMsg, {mode, offset, velocity, steering});
       }
     },
     (1000) / config.frequency
@@ -495,81 +538,76 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
     renderDone();
   }, [renderDone]);
 
-
-  const buttonTheme = createTheme({
-    palette: {
-      background: {
-        active: "#212121",
-        disabled: "#666666",
-        lightGray: "#cfd2dd"
-      },
-      fill: {
-
-      },
-      gradient: "radial-gradient(circle, rgba(73,75,88,1) 30%, rgba(255,255,255,0.96) 100%)"
-    }
-  })
-
-  // const dimensionsHook = useRefDimensions(joystick_ref, {dimensions, setDimensions});
+  const container = useRef<HTMLDivElement | null>(null);
+  const { width, height } = useResizeDetector({
+      refreshRate: 0,
+      refreshMode: "debounce",
+      targetRef: container,
+  });
 
   return (
-    <ThemeProvider theme={buttonTheme}>
-      <div style={{ marginTop: "2.5vh", marginBottom: "2.5vh" }}>
-        <h2 style={{ textAlign: "center" }}>
-          velocity: {velocity}, steering: {steering}, mode: {isUndefined(mode) ? 'not enabled' : mode}
-        </h2>
-        {/* <p>Dimensions: {dimensions.width}w {dimensions.height}h</p> */}
-      </div>
-      <KeyboardControl
-        mode={mode}
-        setMode={setMode}
-        locked={locked}
-        setLocked={setLocked}
-        setUpArrowPressed={setUpArrowPressed}
-        setDownArrowPressed={setDownArrowPressed}
-        setLeftArrowPressed={setLeftArrowPressed}
-        setRightArrowPressed={setRightArrowPressed}
-        stopVehicle={stopVehicle}
-      />
-      <div id="joystick-area" style={{
-          display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px",
-          gridAutoRows: "minmax(50px, auto)"
-        }}
-        ref={joystick_ref}>
-        <div id="left-stick" style={{ gridRow: "2", gridColumn: "1" }}>
-          <div style={{ width: "50%", margin: "auto" }}>
+    <>
+      <div ref={container}>
+        <p>{deadZone}</p>
+        <KeyboardControl
+          mode={mode}
+          truckMode={truckMode}
+          isKeyboardEnabled={isKeyboardEnabled}
+          setUpArrowPressed={setUpArrowPressed}
+          setDownArrowPressed={setDownArrowPressed}
+          setLeftArrowPressed={setLeftArrowPressed}
+          setRightArrowPressed={setRightArrowPressed}
+          stopVehicle={stopVehicle}
+          setMode={setMode}
+        />
+        <ModesSwitcher
+          mode={mode}
+          truckMode={truckMode}
+          setMode={setMode}
+        />
+        <div style={{ width: "100%", paddingTop: `${height ? height * 0.1 : 0}px`,
+                      display: "flex", flexDirection: "row", gap: `${width ? width * 0.2 : 0}px`,
+                      justifyContent: "center", textAlign: "center" }}
+            ref={container}>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <div style={{margin: "auto", paddingBottom: `${height ? height * 0.1 : 0}px`}}>
+              <p>VELOCITY</p>
+              <p>{getSign(velocity)}{velocity}</p>
+            </div>
             <Joystick controlPlaneShape={JoystickShape.AxisY}
               baseColor="rgba(0, 0, 0, 0.3)"
               stickColor="rgba(0, 0, 0, 0.7)"
               pos={{ x: 0, y: velocity }}
               move={(event: IJoystickUpdateEvent) => {
-                if (event.y) {
+                if ( isJoystickEnabled() && event.y) {
                   setVelocity(event.y)
                 }
               }}
-              // size={dimensions.width * 0.2}
+              size={width ? width * 0.2 : 0}
               stop={() => setVelocity(0)}
             />
           </div>
-        </div>
-        <div id="right-stick" style={{ gridRow: "2", gridColumn: "2" }}>
-          <div style={{ width: "50%", margin: "auto" }}>
+          <div style={{ display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <div style={{margin: "auto", paddingBottom: `${height ? height * 0.1 : 0}px`}}>
+              <p>STEERING</p>
+              <p>{getSign(steering)}{steering}</p>
+            </div>
             <Joystick controlPlaneShape={JoystickShape.AxisX}
               baseColor="rgba(0, 0, 0, 0.3)"
               stickColor="rgba(0, 0, 0, 0.7)"
-              pos={{ x: steering, y: 0 }}
+              pos={{  x: -steering, y: 0 }}
               move={(event: IJoystickUpdateEvent) => {
-                if (event.x) {
-                  setSteering(event.x)
+                if ( isJoystickEnabled() && event.x) {
+                  setSteering(-event.x)
                 }
               }}
-              // size={dimensions.width * 0.2}
+              size={width ? width * 0.2 : 0}
               stop={() => setSteering(0)}
             />
           </div>
         </div>
       </div>
-    </ThemeProvider>
+    </>
   );
 }
 

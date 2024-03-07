@@ -54,6 +54,7 @@
     "react-resize-detector": "^9.1.0",
     "shallowequal": "^1.1.0",
     "style-loader": "^3.3.2",
-    "typescript": "5.3.3"
+    "typescript": "5.3.3",
+    "usehooks-ts": "^2.16.0"
   }
 }
