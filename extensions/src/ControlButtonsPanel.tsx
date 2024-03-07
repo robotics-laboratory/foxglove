@@ -1,6 +1,6 @@
 import { PanelExtensionContext, SettingsTreeAction, SettingsTreeNode, SettingsTreeNodes, Topic } from "@foxglove/studio"
 import { ros2humble as ros2 } from "@foxglove/rosmsg-msgs-common";
-import { createRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import ReactDOM from "react-dom";
 import _ from "lodash";
 
@@ -10,18 +10,10 @@ import { IJoystickUpdateEvent } from "react-joystick-component/build/lib/Joystic
 import { useResizeDetector } from "react-resize-detector";
 import { useInterval } from 'usehooks-ts'
 
-import { createTheme, ThemeProvider } from "@mui/system";
-import LockOpenTwoToneIcon from "@mui/icons-material/LockOpenTwoTone";
-import LockTwoToneIcon from "@mui/icons-material/LockTwoTone";
-import SyncDisabledIcon from '@mui/icons-material/SyncDisabled';
-import LooksOneIcon from '@mui/icons-material/LooksOne';
-import LooksTwoIcon from '@mui/icons-material/LooksTwo';
-import Looks3Icon from '@mui/icons-material/Looks3';
-
 
 const getSign = (value: number) => value > 0 ? "+" : ""
 
-const connectGamePadControl = (movementFunctions: any, setMode: any, getDeadZone: any) => {
+const connectGamePadControl = (movementFunctions: any, setMode: any, deadZoneRef: any) => {
   const {setVelocity, setSteering, stopVehicle} = movementFunctions;
 
   let haveEvents = 'GamepadEvent' in window;
@@ -61,13 +53,15 @@ const connectGamePadControl = (movementFunctions: any, setMode: any, getDeadZone
     let controller = scanGamepads();
     const x = controller?.axes?.at(2)
     const y = controller?.axes?.at(1)
-    if (y) {
-      setVelocity(Math.abs(y) > getDeadZone() ? -y : 0 )
+    if (deadZoneRef.current != undefined) {
+      if (y) {
+        setVelocity(Math.abs(y) > deadZoneRef.current ? -y : 0 )
+      }
+      if (x) {
+        setSteering(Math.abs(x) > deadZoneRef.current ? -x : 0)
+      }
+      console.log(deadZoneRef.current)
     }
-    if (x) {
-      setSteering(Math.abs(x) > getDeadZone() ? -x : 0)
-    }
-    console.log(getDeadZone())
     let buttons = controller?.buttons
     if (buttons) {
       if (buttons[0]?.value == 1) {
@@ -410,10 +404,6 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   const [leftArrowPressed, setLeftArrowPressed] = useState<number>(0);
   const [rightArrowPressed, setRightArrowPressed] = useState<number>(0);
 
-  const [squareButtonPressed, setSquareButtonPressed] = useState<boolean>(false);
-  const [xButtonPressed, setXButtonPressed] = useState<boolean>(false);
-  const [circleButtonPressed, setCircleButtonPressed] = useState<boolean>(false);
-
   const [topics, setTopics] = useState<readonly Topic[]>([]);
   
   const [config, setConfig] = useState<Config>(() => {
@@ -451,6 +441,12 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   const isKeyboardEnabled = () => controlMode == 0
   const isJoystickEnabled = () => controlMode == 1
   const isGamepadEnabled = () => controlMode == 2
+
+  const deadZoneRef = useRef<number>(deadZone)
+
+  useEffect(()=> {
+    deadZoneRef.current = deadZone
+  }, [deadZone])
 
   // adds onBlur events
   useEffect(() => {
@@ -503,7 +499,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   
   // starts listening to a gamepad
   useEffect(() => {
-    connectGamePadControl({setVelocity, setSteering, stopVehicle}, setMode, () => deadZone)
+    connectGamePadControl({setVelocity, setSteering, stopVehicle}, setMode, deadZoneRef)
   }, [])
 
   // checks keyboard buttons
@@ -548,7 +544,6 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   return (
     <>
       <div ref={container}>
-        <p>{deadZone}</p>
         <KeyboardControl
           mode={mode}
           truckMode={truckMode}
