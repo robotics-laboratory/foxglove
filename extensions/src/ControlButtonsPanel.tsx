@@ -10,6 +10,13 @@ import { IJoystickUpdateEvent } from "react-joystick-component/build/lib/Joystic
 import { useResizeDetector } from "react-resize-detector";
 import { useInterval } from 'usehooks-ts'
 
+declare global {
+  interface Window {
+    controlPanelsCount: number;
+  }
+}
+
+window.controlPanelsCount = 0;
 
 const getSign = (value: number) => value > 0 ? "+" : ""
 
@@ -613,9 +620,16 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
 }
 
 export function initControlButtonsPanel(context: PanelExtensionContext): () => void {
-  ReactDOM.render(<ControlButtonsPanel context={context} />, context.panelElement);
+  if (window.controlPanelsCount == 0) {
+    ReactDOM.render(<ControlButtonsPanel context={context} />, context.panelElement);
+    window.controlPanelsCount++;
+  } else {
+    alert("There is already a control panel mounted")
+    throw Error("There is already a control panel mounted")
+  }
 
   return () => {
-    ReactDOM.unmountComponentAtNode(context.panelElement);
+  window.controlPanelsCount--;
+  ReactDOM.unmountComponentAtNode(context.panelElement);
   };
 }
