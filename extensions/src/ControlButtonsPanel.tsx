@@ -13,7 +13,7 @@ import { useInterval } from 'usehooks-ts'
 
 const getSign = (value: number) => value > 0 ? "+" : ""
 
-const connectGamePadControl = (movementFunctions: any, setMode: any, deadZoneRef: any) => {
+const connectGamePadControl = (movementFunctions: any, setMode: any, deadZoneRef: any, isGamepadEnabledRef: any) => {
   const {setVelocity, setSteering, stopVehicle} = movementFunctions;
 
   let haveEvents = 'GamepadEvent' in window;
@@ -53,31 +53,31 @@ const connectGamePadControl = (movementFunctions: any, setMode: any, deadZoneRef
     let controller = scanGamepads();
     const x = controller?.axes?.at(2)
     const y = controller?.axes?.at(1)
-    if (deadZoneRef.current != undefined) {
+    if (deadZoneRef.current != undefined && isGamepadEnabledRef.current) {
       if (y) {
         setVelocity(Math.abs(y) > deadZoneRef.current ? -y : 0 )
       }
       if (x) {
         setSteering(Math.abs(x) > deadZoneRef.current ? -x : 0)
       }
-      console.log(deadZoneRef.current)
-    }
-    let buttons = controller?.buttons
-    if (buttons) {
-      if (buttons[0]?.value == 1) {
-        // console.log("X pressed")
-        setMode(1)
-      }
-      if (buttons[1]?.value == 1) {
-        // console.log("Circle pressed")
-        setMode(2)
-      }
-      if (buttons[2]?.value == 1) {
-        // console.log("Square pressed")
-        setMode(0)
-      }
-      if (buttons[3]?.value == 1) {
-        console.log("Triangle pressed")
+
+      let buttons = controller?.buttons
+      if (buttons) {
+        if (buttons[0]?.value == 1) {
+          // console.log("X pressed")
+          setMode(1)
+        }
+        if (buttons[1]?.value == 1) {
+          // console.log("Circle pressed")
+          setMode(2)
+        }
+        if (buttons[2]?.value == 1) {
+          // console.log("Square pressed")
+          setMode(0)
+        }
+        if (buttons[3]?.value == 1) {
+          console.log("Triangle pressed")
+        }
       }
     }
     rAF(updateStatus);
@@ -440,9 +440,13 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
 
   const isKeyboardEnabled = () => controlMode == 0
   const isJoystickEnabled = () => controlMode == 1
-  const isGamepadEnabled = () => controlMode == 2
+  const isGamepadEnabledRef = useRef<boolean>(controlMode == 2)
 
   const deadZoneRef = useRef<number>(deadZone)
+  
+  useEffect(() => {
+    isGamepadEnabledRef.current = controlMode == 2
+  }, [controlMode])
 
   useEffect(()=> {
     deadZoneRef.current = deadZone
@@ -499,7 +503,7 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   
   // starts listening to a gamepad
   useEffect(() => {
-    connectGamePadControl({setVelocity, setSteering, stopVehicle}, setMode, deadZoneRef)
+    connectGamePadControl({setVelocity, setSteering, stopVehicle}, setMode, deadZoneRef, isGamepadEnabledRef)
   }, [])
 
   // checks keyboard buttons
