@@ -333,7 +333,7 @@ const ModesSwitcher = (props: any) => {
     return (
       <button style={{ borderRadius: "10px", position: "relative", height: "2.5rem", width: "100%",
                     border: "solid 2px black", cursor: "pointer",
-                    backgroundColor: panelMode == modeValue ? `rgba(${colors[mode]}, ${truckMode == panelMode ? 1 : 0.5})` : "none" }}
+                    backgroundColor: panelMode == modeValue ? `rgba(${colors[panelMode]}, ${truckMode == panelMode ? 1 : 0.5})` : "none" }}
            onClick={()=>{setMode(modeValue)}}>
         
         <p className={truckMode == modeValue && truckMode != panelMode ? "blinking-indicator": "none"}
@@ -383,6 +383,8 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   const setMode = (newMode: number) => {
     _setMode(() => newMode)
     if (newMode == 0) {
+      _setVelocity(0);
+      _setSteering(0);
       publish(context, currentTopic, latestMsg, {mode: 0, offset, velocity, steering});
     }
   }
