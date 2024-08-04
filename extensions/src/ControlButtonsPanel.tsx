@@ -183,7 +183,7 @@ function createMsg(frame_id: string, curvature: number, velocity: number, mode: 
 };
 
 function publish(context: any, currentTopic: any, msgRef: any, data: any) {
-  const {mode, offset, velocity, steering} = data
+  const {mode, offset} = data
   let date = new Date(Date.now() - (offset * 1000));
   msgRef.current.header.stamp.sec = Math.floor(date.getTime() / 1000);
   msgRef.current.header.stamp.nsec = date.getMilliseconds() * 1e+6;
@@ -350,7 +350,7 @@ const StyledButton = muiStyled(Button, {
 });
 
 function ModeButton(props: any): JSX.Element {
-  const {label, modeValue, panelMode, truckMode, setMode} = props;
+  const {label, modeValue, truckMode, setMode} = props;
   const colors = ["#e34b4b", "#1590e8", "#26d83e"];
   return (
     <StyledButton
