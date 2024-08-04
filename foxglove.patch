@@ -1,5 +1,5 @@
 diff --git a/packages/studio-base/src/Workspace.tsx b/packages/studio-base/src/Workspace.tsx
-index 5905435..f3b7c9c 100644
+index 590543523..f3b7c9cec 100644
 --- a/packages/studio-base/src/Workspace.tsx
 +++ b/packages/studio-base/src/Workspace.tsx
 @@ -10,7 +10,8 @@
@@ -75,7 +75,7 @@ index 5905435..f3b7c9c 100644
    const openHandle = useCallback(
      async (
 diff --git a/packages/studio-base/src/components/LayoutBrowser/index.tsx b/packages/studio-base/src/components/LayoutBrowser/index.tsx
-index f426dae..3986b48 100644
+index f426dae89..3986b48b2 100644
 --- a/packages/studio-base/src/components/LayoutBrowser/index.tsx
 +++ b/packages/studio-base/src/components/LayoutBrowser/index.tsx
 @@ -5,6 +5,7 @@
@@ -201,8 +201,142 @@ index f426dae..3986b48 100644
        ].filter(Boolean)}
      >
        {promptModal}
+diff --git a/packages/studio-base/src/components/OpenDialog/useOpenFile.tsx b/packages/studio-base/src/components/OpenDialog/useOpenFile.tsx
+index 71cd572a1..fd3d1920c 100644
+--- a/packages/studio-base/src/components/OpenDialog/useOpenFile.tsx
++++ b/packages/studio-base/src/components/OpenDialog/useOpenFile.tsx
+@@ -58,6 +58,37 @@ export function useOpenFile(sources: IDataSourceFactory[]): () => Promise<void>
+       throw new Error(`Cannot find source to handle ${file.name}`);
+     }
+ 
++    // const fileChanged = async (records: any, observer: any) => {
++    //   const changedFileHandle = records[0].changedHandle;
++    //   console.log("File changed", changedFileHandle)
++    //   console.log(await changedFileHandle.queryPermission({mode: "read"}))
++    //   selectSource(foundSource.id, { type: "file", handle: changedFileHandle });
++    // }
++    // const observer = new (window as any).FileSystemObserver(fileChanged);
++    // await observer.observe(fileHandle)
++    // console.log("observer created")
++
++    let intervalHandle = (window as any).__watch_interval__;
++    if (intervalHandle !== undefined) {
++      console.log("Cleared previous interval");
++      clearInterval(intervalHandle);
++    }
++
++    let lastKnownTimestamp = file.lastModified;
++    const watchForChanges = async () => {
++      const file = await fileHandle.getFile();
++      const timestamp = file.lastModified;
++      if (timestamp > lastKnownTimestamp) {
++        lastKnownTimestamp = timestamp;
++        console.log("File changed");
++        selectSource(foundSource.id, { type: "file", handle: fileHandle });
++      } else {
++        console.log("Not changed");
++      }
++    }
++
++    (window as any).__watch_interval__ = setInterval(watchForChanges, 300);
++
+     selectSource(foundSource.id, { type: "file", handle: fileHandle });
+   }, [allExtensions, selectSource, sources]);
+ }
+diff --git a/packages/studio-base/src/components/Sidebars/index.tsx b/packages/studio-base/src/components/Sidebars/index.tsx
+index b917517de..818589e15 100644
+--- a/packages/studio-base/src/components/Sidebars/index.tsx
++++ b/packages/studio-base/src/components/Sidebars/index.tsx
+@@ -2,11 +2,10 @@
+ // License, v2.0. If a copy of the MPL was not distributed with this
+ // file, You can obtain one at http://mozilla.org/MPL/2.0/
+ 
+-import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
++import AspectRatioIcon from '@mui/icons-material/AspectRatio';
+ import { Badge, Paper, Tab, Tabs } from "@mui/material";
+ import {
+   ComponentProps,
+-  MouseEvent,
+   PropsWithChildren,
+   useCallback,
+   useEffect,
+@@ -17,7 +16,6 @@ import { MosaicNode, MosaicWithoutDragDropContext } from "react-mosaic-component
+ import { makeStyles } from "tss-react/mui";
+ 
+ import { AppSetting } from "@foxglove/studio-base/AppSetting";
+-import { HelpMenu } from "@foxglove/studio-base/components/AppBar/HelpMenu";
+ import { BuiltinIcon } from "@foxglove/studio-base/components/BuiltinIcon";
+ import ErrorBoundary from "@foxglove/studio-base/components/ErrorBoundary";
+ import { MemoryUseIndicator } from "@foxglove/studio-base/components/MemoryUseIndicator";
+@@ -121,6 +119,14 @@ function mosiacRightSidebarSplitPercentage(node: MosaicNode<LayoutNode>): number
+   }
+ }
+ 
++function toggleFullScreen() {
++  if (!document.fullscreenElement) {
++    document.documentElement.requestFullscreen();
++  } else if (document.exitFullscreen) {
++    document.exitFullscreen();
++  }
++}
++
+ type SidebarProps<OldLeftKey, LeftKey, RightKey> = PropsWithChildren<{
+   items: Map<OldLeftKey, SidebarItem>;
+   bottomItems: Map<OldLeftKey, SidebarItem>;
+@@ -180,17 +186,6 @@ export default function Sidebars<
+     return new Map([...items, ...bottomItems]);
+   }, [bottomItems, items]);
+ 
+-  const [helpAnchorEl, setHelpAnchorEl] = useState<undefined | HTMLElement>(undefined);
+-
+-  const helpMenuOpen = Boolean(helpAnchorEl);
+-
+-  const handleHelpClick = (event: MouseEvent<HTMLElement>) => {
+-    setHelpAnchorEl(event.currentTarget);
+-  };
+-  const handleHelpClose = () => {
+-    setHelpAnchorEl(undefined);
+-  };
+-
+   const oldLeftSidebarOpen = !enableNewTopNav
+     ? selectedKey != undefined && allOldLeftItems.has(selectedKey)
+     : false;
+@@ -334,29 +329,13 @@ export default function Sidebars<
+             <Tab
+               className={classes.tab}
+               color="inherit"
+-              id="help-button"
+-              aria-label="Help menu button"
+-              aria-controls={helpMenuOpen ? "help-menu" : undefined}
+-              aria-haspopup="true"
+-              aria-expanded={helpMenuOpen ? "true" : undefined}
+-              onClick={(event) => handleHelpClick(event)}
+-              icon={<HelpOutlineIcon color={helpMenuOpen ? "primary" : "inherit"} />}
++              id="fullscreen-toggle"
++              aria-label="Toggle fullscreen"
++              onClick={() => toggleFullScreen()}
++              icon={<AspectRatioIcon />}
+             />
+             {bottomTabs}
+           </Tabs>
+-          <HelpMenu
+-            anchorEl={helpAnchorEl}
+-            open={helpMenuOpen}
+-            handleClose={handleHelpClose}
+-            anchorOrigin={{
+-              horizontal: "right",
+-              vertical: "bottom",
+-            }}
+-            transformOrigin={{
+-              vertical: "bottom",
+-              horizontal: "left",
+-            }}
+-          />
+         </Stack>
+       )}
+       {
 diff --git a/packages/studio-base/src/panels/ThreeDeeRender/Input.ts b/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
-index fb37b28..b536b97 100644
+index fb37b28ef..b536b9734 100644
 --- a/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
 +++ b/packages/studio-base/src/panels/ThreeDeeRender/Input.ts
 @@ -132,16 +132,29 @@ export class Input extends EventEmitter<InputEvents> {
@@ -239,8 +373,240 @@ index fb37b28..b536b97 100644
    };
  
    private onTouchMove = (event: TouchEvent): void => {
+diff --git a/packages/studio-base/src/panels/ThreeDeeRender/ThreeDeeRender.tsx b/packages/studio-base/src/panels/ThreeDeeRender/ThreeDeeRender.tsx
+index af28037e2..336426063 100644
+--- a/packages/studio-base/src/panels/ThreeDeeRender/ThreeDeeRender.tsx
++++ b/packages/studio-base/src/panels/ThreeDeeRender/ThreeDeeRender.tsx
+@@ -3,20 +3,12 @@
+ // file, You can obtain one at http://mozilla.org/MPL/2.0/
+ 
+ import { Ruler24Filled } from "@fluentui/react-icons";
+-import {
+-  IconButton,
+-  ListItemIcon,
+-  ListItemText,
+-  Menu,
+-  MenuItem,
+-  Paper,
+-  useTheme,
+-} from "@mui/material";
++import { IconButton, Paper } from "@mui/material";
+ import { Immutable } from "immer";
+ import { cloneDeep, isEqual, merge } from "lodash";
+ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+ import ReactDOM from "react-dom";
+-import { useLatest, useLongPress } from "react-use";
++import { useLatest } from "react-use";
+ import { DeepPartial } from "ts-essentials";
+ import { makeStyles } from "tss-react/mui";
+ import { useDebouncedCallback } from "use-debounce";
+@@ -199,22 +191,22 @@ function RendererOverlay(props: {
+     () =>
+       selectedRenderable
+         ? {
+-            object: {
+-              pose: selectedRenderable.renderable.pose,
+-              interactionData: {
+-                topic: selectedRenderable.renderable.topic,
+-                highlighted: true,
+-                originalMessage: selectedRenderable.renderable.details(),
+-                instanceDetails:
+-                  selectedRenderable.instanceIndex != undefined
+-                    ? selectedRenderable.renderable.instanceDetails(
+-                        selectedRenderable.instanceIndex,
+-                      )
+-                    : undefined,
+-              },
++          object: {
++            pose: selectedRenderable.renderable.pose,
++            interactionData: {
++              topic: selectedRenderable.renderable.topic,
++              highlighted: true,
++              originalMessage: selectedRenderable.renderable.details(),
++              instanceDetails:
++                selectedRenderable.instanceIndex != undefined
++                  ? selectedRenderable.renderable.instanceDetails(
++                    selectedRenderable.instanceIndex,
++                  )
++                  : undefined,
+             },
+-            instanceIndex: selectedRenderable.instanceIndex,
+-          }
++          },
++          instanceIndex: selectedRenderable.instanceIndex,
++        }
+         : undefined,
+     [selectedRenderable],
+   );
+@@ -225,15 +217,6 @@ function RendererOverlay(props: {
+   }, [renderer, selectedRenderable]);
+ 
+   const publickClickButtonRef = useRef<HTMLButtonElement>(ReactNull);
+-  const [publishMenuExpanded, setPublishMenuExpanded] = useState(false);
+-  const selectedPublishClickIcon = PublishClickIcons[props.publishClickType];
+-
+-  const onLongPressPublish = useCallback(() => {
+-    setPublishMenuExpanded(true);
+-  }, []);
+-  const longPressPublishEvent = useLongPress(onLongPressPublish);
+-
+-  const theme = useTheme();
+ 
+   // Publish control is only available if the canPublish prop is true and we have a fixed frame in the renderer
+   const showPublishControl =
+@@ -241,67 +224,41 @@ function RendererOverlay(props: {
+   const publishControls = showPublishControl && (
+     <>
+       <IconButton
+-        {...longPressPublishEvent}
+-        color={props.publishActive ? "info" : "inherit"}
+-        title={props.publishActive ? "Click to cancel" : "Click to publish"}
++        color={props.publishActive && props.publishClickType === "point" ? "info" : "inherit"}
++        title="Publish point"
+         ref={publickClickButtonRef}
+-        onClick={props.onClickPublish}
+-        data-testid="publish-button"
++        onClick={() => {
++          if (props.publishClickType == "point") props.onClickPublish();
++          else props.onChangePublishClickType("point");
++        }}
+         style={{ fontSize: "1rem", pointerEvents: "auto" }}
+       >
+-        {selectedPublishClickIcon}
+-        <div
+-          style={{
+-            borderBottom: "6px solid currentColor",
+-            borderRight: "6px solid transparent",
+-            bottom: 0,
+-            left: 0,
+-            height: 0,
+-            width: 0,
+-            margin: theme.spacing(0.25),
+-            position: "absolute",
+-          }}
+-        />
++        {PublishClickIcons.point}
++      </IconButton>
++      <IconButton
++        color={props.publishActive && props.publishClickType === "pose" ? "info" : "inherit"}
++        title="Publish pose"
++        ref={publickClickButtonRef}
++        onClick={() => {
++          if (props.publishClickType == "pose") props.onClickPublish();
++          else props.onChangePublishClickType("pose");
++        }}
++        style={{ fontSize: "1rem", pointerEvents: "auto" }}
++      >
++        {PublishClickIcons.pose}
+       </IconButton>
+-      <Menu
+-        id="publish-menu"
+-        anchorEl={publickClickButtonRef.current}
+-        anchorOrigin={{ vertical: "top", horizontal: "left" }}
+-        transformOrigin={{ vertical: "top", horizontal: "right" }}
+-        open={publishMenuExpanded}
+-        onClose={() => setPublishMenuExpanded(false)}
++      <IconButton
++        color={props.publishActive && props.publishClickType === "pose_estimate" ? "info" : "inherit"}
++        title="Publish pose estimate"
++        ref={publickClickButtonRef}
++        onClick={() => {
++          if (props.publishClickType == "pose_estimate") props.onClickPublish();
++          else props.onChangePublishClickType("pose_estimate");
++        }}
++        style={{ fontSize: "1rem", pointerEvents: "auto" }}
+       >
+-        <MenuItem
+-          selected={props.publishClickType === "pose_estimate"}
+-          onClick={() => {
+-            props.onChangePublishClickType("pose_estimate");
+-            setPublishMenuExpanded(false);
+-          }}
+-        >
+-          <ListItemIcon>{PublishClickIcons.pose_estimate}</ListItemIcon>
+-          <ListItemText>Publish pose estimate</ListItemText>
+-        </MenuItem>
+-        <MenuItem
+-          selected={props.publishClickType === "pose"}
+-          onClick={() => {
+-            props.onChangePublishClickType("pose");
+-            setPublishMenuExpanded(false);
+-          }}
+-        >
+-          <ListItemIcon>{PublishClickIcons.pose}</ListItemIcon>
+-          <ListItemText>Publish pose</ListItemText>
+-        </MenuItem>
+-        <MenuItem
+-          selected={props.publishClickType === "point"}
+-          onClick={() => {
+-            props.onChangePublishClickType("point");
+-            setPublishMenuExpanded(false);
+-          }}
+-        >
+-          <ListItemIcon>{PublishClickIcons.point}</ListItemIcon>
+-          <ListItemText>Publish point</ListItemText>
+-        </MenuItem>
+-      </Menu>
++        {PublishClickIcons.pose_estimate}
++      </IconButton>
+     </>
+   );
+ 
+@@ -327,27 +284,31 @@ function RendererOverlay(props: {
+           timezone={props.timezone}
+         />
+         {props.interfaceMode === "3d" && (
+-          <Paper square={false} elevation={4} style={{ display: "flex", flexDirection: "column" }}>
+-            <IconButton
+-              className={classes.iconButton}
+-              color={props.perspective ? "info" : "inherit"}
+-              title={props.perspective ? "Switch to 2D camera" : "Switch to 3D camera"}
+-              onClick={props.onTogglePerspective}
+-            >
+-              <span className={classes.threeDeeButton}>3D</span>
+-            </IconButton>
+-            <IconButton
+-              data-testid="measure-button"
+-              className={classes.iconButton}
+-              color={props.measureActive ? "info" : "inherit"}
+-              title={props.measureActive ? "Cancel measuring" : "Measure distance"}
+-              onClick={props.onClickMeasure}
+-            >
+-              <Ruler24Filled className={classes.rulerIcon} />
+-            </IconButton>
+-
+-            {publishControls}
+-          </Paper>
++          <>
++            <Paper square={false} elevation={4} style={{ display: "flex", flexDirection: "column" }}>
++              <IconButton
++                className={classes.iconButton}
++                color={props.perspective ? "info" : "inherit"}
++                title={props.perspective ? "Switch to 2D camera" : "Switch to 3D camera"}
++                onClick={props.onTogglePerspective}
++              >
++                <span className={classes.threeDeeButton}>3D</span>
++              </IconButton>
++              <IconButton
++                data-testid="measure-button"
++                className={classes.iconButton}
++                color={props.measureActive ? "info" : "inherit"}
++                title={props.measureActive ? "Cancel measuring" : "Measure distance"}
++                onClick={props.onClickMeasure}
++              >
++                <Ruler24Filled className={classes.rulerIcon} />
++              </IconButton>
++            </Paper>
++
++            <Paper square={false} elevation={4} style={{ display: "flex", flexDirection: "column" }}>
++              {publishControls}
++            </Paper>
++          </>
+         )}
+       </div>
+       {clickedObjects.length > 1 && !selectedObject && (
 diff --git a/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts b/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
-index 3432f5d..cb31f7f 100644
+index 3432f5d9e..cb31f7fff 100644
 --- a/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
 +++ b/packages/studio-base/src/panels/ThreeDeeRender/renderables/PublishClickTool.ts
 @@ -178,7 +178,8 @@ export class PublishClickTool extends SceneExtension<Renderable<BaseUserData>, P
@@ -254,7 +620,7 @@ index 3432f5d..cb31f7f 100644
            this._setState("place-second-point");
          }
 diff --git a/packages/studio-web/src/index.tsx b/packages/studio-web/src/index.tsx
-index f6209a1..a1bc699 100644
+index f6209a1cb..a1bc69976 100644
 --- a/packages/studio-web/src/index.tsx
 +++ b/packages/studio-web/src/index.tsx
 @@ -9,6 +9,7 @@ import Logger from "@foxglove/log";

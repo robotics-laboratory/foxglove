@@ -1,5 +1,5 @@
-import { PanelExtensionContext, RenderState } from "@foxglove/studio";
-import { useLayoutEffect, useRef } from "react";
+import { Immutable, PanelExtensionContext, RenderState } from "@foxglove/studio";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useResizeDetector } from "react-resize-detector";
 import ReactDOM from "react-dom";
 
@@ -24,6 +24,7 @@ function getCurrentState(renderState: RenderState): CartPoleState | null {
 };
 
 function CartPolePanel({ context }: { context: PanelExtensionContext }): JSX.Element {
+    const [renderDone, setRenderDone] = useState<() => void>(() => () => { });
     const canvas = useRef<HTMLCanvasElement | null>(null);
     const container = useRef<HTMLDivElement | null>(null);
     const context2d = useRef<CanvasRenderingContext2D | null>(null);
@@ -36,8 +37,13 @@ function CartPolePanel({ context }: { context: PanelExtensionContext }): JSX.Ele
     });
 
     useLayoutEffect(() => {
-        context.onRender = (renderState: RenderState, done) => {
-            if (!context2d.current || !width || !height) return done();
+        context.onRender = (renderState: Immutable<RenderState>, done) => {
+            setRenderDone(() => done);
+            const state = getCurrentState(renderState as any);
+            if (!state || !context2d.current || !width || !height) return;
+            const history = stateHistory.current;
+            history.unshift(state);
+            if (history.length > historySize) history.length = historySize;
 
             const ctx = context2d.current;
             const midX = width / 2;
@@ -62,12 +68,6 @@ function CartPolePanel({ context }: { context: PanelExtensionContext }): JSX.Ele
             ctx.moveTo(midX + cartRange / 2, midY - railBorderSize / 2);
             ctx.lineTo(midX + cartRange / 2, midY + railBorderSize / 2);
             ctx.stroke();
-
-            const state = getCurrentState(renderState);
-            if (!state) return done();
-            const history = stateHistory.current;
-            history.unshift(state);
-            if (history.length > historySize) history.length = historySize;
 
             const getPoleEndPoint = (state: CartPoleState): [number, number] => {
                 const cartCenter = midX + state.pos * (cartRange - cartSize) / 2;
@@ -102,7 +102,7 @@ function CartPolePanel({ context }: { context: PanelExtensionContext }): JSX.Ele
             ctx.arc(cartCenter, midY, 15, 0, 2 * Math.PI);
             ctx.fill();
 
-            if (history.length < 2) return done();
+            if (history.length < 2) return;
 
             // Draw trajectory
             let prevPoint = getPoleEndPoint(history[0] as CartPoleState);
@@ -117,14 +117,14 @@ function CartPolePanel({ context }: { context: PanelExtensionContext }): JSX.Ele
                 ctx.stroke();
                 prevPoint = currPoint;
             });
-
-            done();
         };
 
         context.watch("currentFrame");
-        context.subscribe([stateTopic]);
+        context.subscribe([{ topic: stateTopic }]);
         context2d.current = canvas.current?.getContext("2d") || null;
     }, [context, width, height]);
+
+    useLayoutEffect(() => { renderDone() }, [renderDone]);
 
     return <div className="cartpole-panel">
         <div className="wrapper" ref={container}>

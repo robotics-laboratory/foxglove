@@ -3,3 +3,4 @@ dist/
 *.foxe
 .vscode/
 .env*
+foxglove-source/
