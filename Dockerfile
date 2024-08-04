@@ -4,7 +4,7 @@ ARG ARCH="linux/amd64"
 FROM --platform=linux/amd64 node:16 as foxglove-base
 WORKDIR /src
 RUN apt update && apt install --no-install-recommends -y git-lfs
-# Foxglove source code is no loger available on github
+# Foxglove source code is no longer available on github
 # Provide your own sources in "foxglove-sources" dir
 COPY foxglove-source /src
 RUN corepack enable && yarn install --immutable
