@@ -6,9 +6,9 @@ import _ from "lodash";
 
 import { Joystick, JoystickShape } from "react-joystick-component"
 import { IJoystickUpdateEvent } from "react-joystick-component/build/lib/Joystick";
-
 import { useResizeDetector } from "react-resize-detector";
 import { useInterval } from 'usehooks-ts'
+import { Button, styled as muiStyled } from '@mui/material';
 
 declare global {
   interface Window {
@@ -188,6 +188,7 @@ function publish(context: any, currentTopic: any, msgRef: any, data: any) {
   msgRef.current.header.stamp.sec = Math.floor(date.getTime() / 1000);
   msgRef.current.header.stamp.nsec = date.getMilliseconds() * 1e+6;
   if (mode == 0) {
+    msgRef.current.mode = 0;
     msgRef.current.curvature_ratio = 0;
     msgRef.current.velocity_ratio = 0;
   }
@@ -327,35 +328,49 @@ const KeyboardControl = (props: any) => {
   return (<></>)
 }
 
-const ModesSwitcher = (props: any) => {
-  const {
-    mode,
-    truckMode,
-    setMode
-  } = props;
-
-  const ModeButton = (props: any) => {
-    const {label, modeValue, panelMode, truckMode, setMode, } = props
-    const colors = ["0, 140, 255 ", "0, 128, 0", "128, 128, 0"]
-    return (
-      <button style={{ borderRadius: "10px", position: "relative", height: "2.5rem", width: "100%",
-                    border: "solid 2px black", cursor: "pointer",
-                    backgroundColor: panelMode == modeValue ? `rgba(${colors[panelMode]}, ${truckMode == panelMode ? 1 : 0.5})` : "none" }}
-           onClick={()=>{setMode(modeValue)}}>
-        
-        <p className={truckMode == modeValue && truckMode != panelMode ? "blinking-indicator": "none"}
-           style={{ position: "absolute", left: "0.2rem", top: "-0.6rem", height: "0.7rem",
-                    aspectRatio: "1 / 1", borderRadius: "50%",
-                    backgroundColor: truckMode != modeValue ? "grey" : truckMode == panelMode ? "red" : "rgba(255, 0, 0, 0.6)" }}></p>
-        <p className="text-unselectable" style={{ verticalAlign: "middle" }}>{ label }</p>
-      </button>
-    )
+const StyledButton = muiStyled(Button, {
+  shouldForwardProp: (prop) => prop !== "buttonColor",
+})<{ buttonColor?: string }>(({ theme, buttonColor, variant }) => {
+  if (buttonColor == undefined) return {};
+  const augColor = theme.palette.augmentColor({color: { main: buttonColor }});
+  if (variant == "contained") {
+    return {
+      backgroundColor: augColor.main,
+      color: augColor.contrastText,
+      borderColor: augColor.main,
+      "&:hover": { backgroundColor: augColor.dark },
+    };
+  } else {
+    return {
+      backgroundColor: "transparent",
+      color: augColor.main,
+      borderColor: augColor.main,
+    };
   }
+});
 
+function ModeButton(props: any): JSX.Element {
+  const {label, modeValue, panelMode, truckMode, setMode} = props;
+  const colors = ["#e34b4b", "#1590e8", "#26d83e"];
   return (
-    <div style={{ display: "flex", flexDirection: "row", gap: "10px",
-                  margin: "auto", paddingTop: "3rem", width: "50%", 
-                  justifyContent: "center", textAlign: "center" }}>
+    <StyledButton
+      size="medium"
+      variant={truckMode == modeValue ? "contained" : "outlined"}
+      buttonColor={colors[modeValue]}
+      onClick={()=>{setMode(modeValue)}}
+      style={{minWidth: "5rem", boxShadow: "none"}}
+    >
+      { label }
+    </StyledButton>
+  )
+}
+
+function ModesSwitcher(props: any): JSX.Element {
+  const {mode, truckMode, setMode} = props;
+  return (
+    <div style={{ display: "flex", flexDirection: "row", gap: "0.5rem",
+                  margin: "auto", paddingTop: "3rem", 
+                  justifyContent: "center", alignItems: "center" }}>
       <ModeButton label="OFF" modeValue={0} panelMode={mode} truckMode={truckMode} setMode={setMode} />
       <ModeButton label="REMOTE" modeValue={1} panelMode={mode} truckMode={truckMode} setMode={setMode} />
       <ModeButton label="AUTO" modeValue={2} panelMode={mode} truckMode={truckMode} setMode={setMode} />
@@ -418,9 +433,9 @@ function ControlButtonsPanel({ context }: { context: PanelExtensionContext }): J
   const [config, setConfig] = useState<Config>(() => {
     const partialConfig = context.initialState as Partial<Config>;
     const {
-      topic,
+      topic = "/control/input",
       frequency = 60,
-      gamepadDeadZone = 0,
+      gamepadDeadZone = 0.05,
       controlMode = 0
     } = partialConfig;
     return {
